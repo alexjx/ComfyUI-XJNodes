@@ -32,6 +32,7 @@ class XJSchedulerAdapter:
     def doit(self, scheduler):
         return (scheduler,)
 
+
 class XJSamplerAdapter:
     @classmethod
     def INPUT_TYPES(s):
@@ -53,6 +54,7 @@ class XJSamplerAdapter:
 
     def doit(self, sampler):
         return (sampler,)
+
 
 class XJStringPass:
     @classmethod
@@ -76,6 +78,7 @@ Passes the string through without modifying it.
 
     def passthrough(self, string=None):
         return (string,)
+
 
 class XJImageScaleCalc:
     @classmethod
@@ -122,13 +125,16 @@ class XJImageScaleCalc:
             new_height,
         )
 
+
 def tensor2pil(t_image: torch.Tensor) -> Image:
     return Image.fromarray(
         np.clip(255.0 * t_image.cpu().numpy().squeeze(), 0, 255).astype(np.uint8)
     )
 
+
 def pil2tensor(image: Image) -> torch.Tensor:
     return torch.from_numpy(np.array(image).astype(np.float32) / 255.0).unsqueeze(0)
+
 
 class XJImageGrid:
     """
@@ -166,6 +172,7 @@ class XJImageGrid:
             canvas.paste(tensor2pil(img), (column * width, row * height))
         return pil2tensor(canvas).unsqueeze(0)
 
+
 class XJIntOffset:
     """
     Adds an integer offset to the input
@@ -186,6 +193,7 @@ class XJIntOffset:
 
     def add_offset(self, input, offset):
         return (input + offset,)
+
 
 class XJImageRandomTransform:
     @classmethod
@@ -224,8 +232,8 @@ class XJImageRandomTransform:
                 "brightness": (
                     "FLOAT",
                     {
-                        "default": 0.5,
-                        "min": 0.0,
+                        "default": 0.0,
+                        "min": -1.0,
                         "max": 1.0,
                         "step": 0.05,
                     },
@@ -233,8 +241,8 @@ class XJImageRandomTransform:
                 "contrast": (
                     "FLOAT",
                     {
-                        "default": 0.5,
-                        "min": 0.0,
+                        "default": 0.0,
+                        "min": -1.0,
                         "max": 1.0,
                         "step": 0.05,
                     },
@@ -242,8 +250,8 @@ class XJImageRandomTransform:
                 "saturation": (
                     "FLOAT",
                     {
-                        "default": 0.5,
-                        "min": 0.0,
+                        "default": 0.0,
+                        "min": -1.0,
                         "max": 1.0,
                         "step": 0.05,
                     },
@@ -345,6 +353,7 @@ class XJImageRandomTransform:
 
         return (out,)
 
+
 class XJImageTransform:
     @classmethod
     def INPUT_TYPES(s):
@@ -364,16 +373,16 @@ class XJImageTransform:
                 "distortion": (
                     "FLOAT",
                     {
-                        "default": 0.2,
+                        "default": 0.1,
                         "min": 0.0,
                         "max": 1.0,
-                        "step": 0.05,
+                        "step": 0.01,
                     },
                 ),
                 "rotation": (
                     "FLOAT",
                     {
-                        "default": 5.0,
+                        "default": 1.0,
                         "min": 0.0,
                         "max": 180.0,
                         "step": 1.0,
@@ -382,8 +391,8 @@ class XJImageTransform:
                 "brightness": (
                     "FLOAT",
                     {
-                        "default": 0.5,
-                        "min": 0.0,
+                        "default": 0.0,
+                        "min": -1.0,
                         "max": 1.0,
                         "step": 0.05,
                     },
@@ -391,8 +400,8 @@ class XJImageTransform:
                 "contrast": (
                     "FLOAT",
                     {
-                        "default": 0.5,
-                        "min": 0.0,
+                        "default": 0.0,
+                        "min": -1.0,
                         "max": 1.0,
                         "step": 0.05,
                     },
@@ -400,8 +409,8 @@ class XJImageTransform:
                 "saturation": (
                     "FLOAT",
                     {
-                        "default": 0.5,
-                        "min": 0.0,
+                        "default": 0.0,
+                        "min": -1.0,
                         "max": 1.0,
                         "step": 0.05,
                     },
@@ -467,12 +476,14 @@ class XJImageTransform:
             if distortion and distortion > 0:
                 max_off = float(distortion) * min(W, H) * 0.25
                 dst_quad = []
-                for (x, y) in src_quad:
+                for x, y in src_quad:
                     dx = rnd_c.uniform(-1.0, 1.0) * max_off
                     dy = rnd_c.uniform(-1.0, 1.0) * max_off
                     dst_quad.append((x + dx, y + dy))
                 coeffs = self._find_coeffs(src_quad, dst_quad)
-                pil = pil.transform(pil.size, Image.PERSPECTIVE, coeffs, resample=Image.BICUBIC)
+                pil = pil.transform(
+                    pil.size, Image.PERSPECTIVE, coeffs, resample=Image.BICUBIC
+                )
 
             # flip whole repeat-groups (e.g. 1a..Na, 1b..Nb). compute repeat_group using original batch size
             repeat_group = idx // orig_B
@@ -500,6 +511,7 @@ class XJImageTransform:
         out = torch.cat(out_list, dim=0)
         return (out,)
 
+
 class XJFloatRangeList:
     @classmethod
     def INPUT_TYPES(s):
@@ -520,6 +532,7 @@ class XJFloatRangeList:
     def range_list(self, start, end, step):
         return (np.arange(start, end, step).tolist(),)
 
+
 class XJIntegerIncrement:
     @classmethod
     def INPUT_TYPES(s):
@@ -537,6 +550,7 @@ class XJIntegerIncrement:
     def increment(self, input, increment):
         return (input + increment,)
 
+
 class XJIntegerDecrement:
     @classmethod
     def INPUT_TYPES(s):
@@ -553,6 +567,7 @@ class XJIntegerDecrement:
 
     def decrement(self, input, decrement):
         return (input - decrement,)
+
 
 class XJSupirParameters:
     @classmethod
@@ -649,6 +664,7 @@ class XJSupirParameters:
                 EDM_s_churn = 40
         return (control_scale_start, control_scale_end, s_noise, EDM_s_churn)
 
+
 class OneImageFromBatch:
     @classmethod
     def INPUT_TYPES(s):
@@ -676,6 +692,7 @@ class OneImageFromBatch:
         if index > image.shape[0]:
             index = image.shape[0]
         return (image[index - 1 : index],)
+
 
 class LoadImagesFromDirBatch:
     @classmethod
@@ -853,6 +870,7 @@ class LoadImagesFromDirBatch:
                 directory, image_load_cap, start_index
             )
 
+
 class LoadImagesFromDirList:
     @classmethod
     def INPUT_TYPES(s):
@@ -983,6 +1001,7 @@ class LoadImagesFromDirList:
                 directory, image_load_cap, start_index
             )
 
+
 class XJImageListFilter:
     RETURN_TYPES = (
         "IMAGE",
@@ -1035,6 +1054,7 @@ class XJImageListFilter:
             output_images,
             ", ".join(str(idx) for idx in empty_indices),
         )
+
 
 class XJRandomTextFromList:
     @classmethod
@@ -1098,6 +1118,7 @@ class XJRandomTextFromList:
             selected_text = random.choice(text_list)
 
         return (selected_text,)
+
 
 class XJRandomTextFromFile:
     @classmethod
@@ -1163,6 +1184,7 @@ class XJRandomTextFromFile:
             selected_text = random.choice(text_list)
 
         return (selected_text,)
+
 
 class XJRandomImagesFromBatch:
     """
@@ -1244,6 +1266,7 @@ class XJRandomImagesFromBatch:
         idx_tensor = torch.tensor(chosen, dtype=torch.long, device=images.device)
         out = images.index_select(0, idx_tensor)
         return (out,)
+
 
 # A dictionary that contains all nodes you want to export with their names
 # NOTE: names should be globally unique
