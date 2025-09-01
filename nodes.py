@@ -183,7 +183,10 @@ class XJIntOffset:
         return {
             "required": {
                 "input": ("INT", {"forceInput": True}),
-                "offset": ("INT", {"default": 0, "min": 0, "step": 1}),
+                "offset": (
+                    "INT",
+                    {"default": 0, "min": 0, "max": 2**32 - 1, "step": 1},
+                ),
             },
         }
 
