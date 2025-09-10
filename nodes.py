@@ -1111,7 +1111,7 @@ class XJRandomTextFromList:
 
         if type == "fixed":
             # If type is fixed, return the first 'choice' number of strings
-            if choice >= len(text_list):
+            if choice >= len(text_list) + 1:
                 raise Exception(f"Choice {choice} exceeded max length {len(text_list)}")
             selected_text = text_list[choice - 1]
         else:
@@ -1177,7 +1177,7 @@ class XJRandomTextFromFile:
 
         if type == "fixed":
             # If type is fixed, return the first 'choice' number of strings
-            if choice >= len(text_list):
+            if choice >= len(text_list) + 1:
                 raise Exception(f"Choice {choice} exceeded max length {len(text_list)}")
             selected_text = text_list[choice - 1]
         else:
@@ -1205,6 +1205,7 @@ class XJRandomImagesFromBatch:
             },
             "optional": {
                 "mandatory_list": ("STRING", {"default": ""}),
+                "exclude_list": ("STRING", {"default": ""}),
                 "seed": (
                     "INT",
                     {"default": 0, "min": 0, "max": 0xFFFFFFFFFFFFFFFF, "step": 1},
@@ -1217,26 +1218,43 @@ class XJRandomImagesFromBatch:
     CATEGORY = "XJNode/image"
     DESCRIPTION = "Select N images from a batch; `mandatory_list` is comma-separated 1-based indices."
 
-    def select(self, images, count, mandatory_list="", seed=0):
+    def select(self, images, count, mandatory_list="", exclude_list="", seed=0):
         # images: tensor with shape (batch, H, W, C)
         batch_size = int(images.shape[0])
 
+        # Clamp count to batch size
+        exclude_list = [p.strip() for p in exclude_list.split(",")]
+        exclude_list_int = []
+        for p in exclude_list:
+            try:
+                idx1 = int(p)
+            except Exception:
+                # skip invalid entries
+                continue
+            # clamp 1..batch_size and convert to 0-based
+            if idx1 < 1:
+                idx1 = 1
+            if idx1 > batch_size:
+                idx1 = batch_size
+            exclude_list_int.append(idx1 - 1)
+        exclude_list = set(exclude_list_int)
+
         # Parse mandatory list (1-based indices). Ignore non-integers.
         mand = []
-        if mandatory_list:
-            parts = [p.strip() for p in mandatory_list.split(",") if p.strip() != ""]
-            for p in parts:
-                try:
-                    idx1 = int(p)
-                except Exception:
-                    # skip invalid entries
-                    continue
-                # clamp 1..batch_size and convert to 0-based
-                if idx1 < 1:
-                    idx1 = 1
-                if idx1 > batch_size:
-                    idx1 = batch_size
-                mand.append(idx1 - 1)
+        mandatory_list = mandatory_list.split(",")
+        parts = [p.strip() for p in mandatory_list if p.strip() != ""]
+        for p in parts:
+            try:
+                idx1 = int(p)
+            except Exception:
+                # skip invalid entries
+                continue
+            # clamp 1..batch_size and convert to 0-based
+            if idx1 < 1:
+                idx1 = 1
+            if idx1 > batch_size:
+                idx1 = batch_size
+            mand.append(idx1 - 1)
 
         # Remove duplicates while preserving order
         seen = set()
@@ -1252,7 +1270,9 @@ class XJRandomImagesFromBatch:
             chosen = mand[:count]
         else:
             # Build remaining pool
-            remaining = [i for i in range(batch_size) if i not in seen]
+            remaining = [
+                i for i in range(batch_size) if i not in seen and i not in exclude_list
+            ]
             rnd = random.Random(seed)
             rnd.shuffle(remaining)
             need = count - len(mand)
