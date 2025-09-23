@@ -1064,13 +1064,7 @@ class XJRandomTextFromList:
     def INPUT_TYPES(s):
         return {
             "required": {
-                "multiline_text": (
-                    "STRING",
-                    {
-                        "multiline": True,
-                        "default": "text",
-                    },
-                ),
+                "multiline_text": ("XJ_NUMBERED_LIST", {}),
                 "type": (("fixed", "random"),),
                 "choice": (
                     "INT",
