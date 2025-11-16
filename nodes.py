@@ -1,5 +1,6 @@
 import os
 import random
+import math
 
 import numpy as np
 import torch
@@ -7,6 +8,7 @@ import torchvision.transforms.v2 as T
 from PIL import Image, ImageEnhance, ImageOps
 
 import comfy.samplers
+import comfy.utils
 import folder_paths
 
 
@@ -124,6 +126,119 @@ class XJImageScaleCalc:
             new_width,
             new_height,
         )
+
+
+class XJImageScaleMegapixel:
+    """
+    Scale image to target megapixels with different methods
+    """
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "megapixels": (
+                    "FLOAT",
+                    {"default": 1.0, "min": 0.01, "max": 16.0, "step": 0.01},
+                ),
+                "round_to": (
+                    [8, 16, 32, 64, 128],
+                    {"default": 8},
+                ),
+                "method": (
+                    ["fill", "fit", "crop"],
+                    {"default": "fit"},
+                ),
+                "upscale_mode": (
+                    ["lanczos", "bicubic", "bilinear", "nearest-exact", "area"],
+                    {"default": "lanczos"},
+                ),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", "INT", "INT")
+    RETURN_NAMES = ("image", "width", "height")
+    FUNCTION = "scale_to_megapixels"
+    CATEGORY = "XJNode/Image"
+    DESCRIPTION = """
+Scale image to target megapixels.
+- fill: Scale to exactly reach target (may change aspect ratio)
+- fit: Scale to fit within target (maintains aspect ratio)
+- crop: Scale to cover target and crop (maintains aspect ratio)
+"""
+
+    def _round_to_multiple(self, value, multiple):
+        """Round value to nearest multiple"""
+        return int(round(value / multiple) * multiple)
+
+    def scale_to_megapixels(self, image, megapixels, round_to, method, upscale_mode):
+        # Get current dimensions
+        batch_size, height, width, channels = image.shape
+        current_pixels = height * width
+        target_pixels = megapixels * 1_000_000
+
+        # Calculate new dimensions based on method
+        if method == "fill":
+            # Fill: create square-ish dimensions at target megapixels
+            side_length = math.sqrt(target_pixels)
+            new_width = self._round_to_multiple(side_length, round_to)
+            new_height = self._round_to_multiple(side_length, round_to)
+            crop_mode = "disabled"
+
+        elif method == "fit":
+            # Fit: maintain aspect ratio, fit within target
+            aspect_ratio = width / height
+            scale = math.sqrt(target_pixels / current_pixels)
+            new_width = self._round_to_multiple(width * scale, round_to)
+            new_height = self._round_to_multiple(height * scale, round_to)
+            crop_mode = "disabled"
+
+        elif method == "crop":
+            # Crop: maintain aspect ratio, scale to cover target, then crop
+            aspect_ratio = width / height
+            # Scale up to cover the target megapixels
+            scale = math.sqrt(target_pixels / current_pixels)
+            temp_width = width * scale
+            temp_height = height * scale
+
+            # Round to get final dimensions
+            new_width = self._round_to_multiple(temp_width, round_to)
+            new_height = self._round_to_multiple(temp_height, round_to)
+
+            # Adjust one dimension to better match target megapixels
+            actual_pixels = new_width * new_height
+            if actual_pixels < target_pixels:
+                # Need to increase size
+                if aspect_ratio > 1:  # wider than tall
+                    new_width = self._round_to_multiple(
+                        math.sqrt(target_pixels * aspect_ratio), round_to
+                    )
+                    new_height = self._round_to_multiple(new_width / aspect_ratio, round_to)
+                else:  # taller than wide
+                    new_height = self._round_to_multiple(
+                        math.sqrt(target_pixels / aspect_ratio), round_to
+                    )
+                    new_width = self._round_to_multiple(new_height * aspect_ratio, round_to)
+
+            crop_mode = "center"
+
+        # Ensure minimum dimensions
+        new_width = max(round_to, new_width)
+        new_height = max(round_to, new_height)
+
+        # Convert image tensor from (B,H,W,C) to (B,C,H,W) for processing
+        samples = image.movedim(-1, 1)
+
+        # Use comfy's common_upscale function
+        scaled = comfy.utils.common_upscale(
+            samples, new_width, new_height, upscale_mode, crop_mode
+        )
+
+        # Convert back to (B,H,W,C)
+        scaled = scaled.movedim(1, -1)
+
+        return (scaled, new_width, new_height)
 
 
 def tensor2pil(t_image: torch.Tensor) -> Image:
@@ -1292,6 +1407,7 @@ NODE_CLASS_MAPPINGS = {
     "XJSamplerAdapter": XJSamplerAdapter,
     "XJStringPass": XJStringPass,
     "XJImageScaleCalc": XJImageScaleCalc,
+    "XJImageScaleMegapixel": XJImageScaleMegapixel,
     "XJImageGrid": XJImageGrid,
     "XJIntOffset": XJIntOffset,
     "XJImageRandomTransform": XJImageRandomTransform,
@@ -1315,6 +1431,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "XJSamplerAdapter": "Sampler Adapter",
     "XJStringPass": "StringPass",
     "XJImageScaleCalc": "Image Scale Calc",
+    "XJImageScaleMegapixel": "Image Scale Megapixel",
     "XJImageGrid": "Image Grid",
     "XJIntOffset": "Int Offset",
     "XJImageRandomTransform": "Image Random Transform",
