@@ -646,13 +646,87 @@ app.registerExtension({
                 const imageWidget = this.widgets.find(w => w.name === "image");
 
                 if (directoryWidget && subdirectoryWidget && imageWidget) {
-                    // Ensure the image widget has proper image_upload flag for preview
-                    imageWidget.options.image_upload = true;
+                    // Store preview image in custom property (not node.imgs to avoid ImagePreviewWidget)
+                    node.previewImage = null;
+
+                    // Custom draw function for image preview
+                    const originalOnDrawForeground = node.onDrawForeground;
+                    node.onDrawForeground = function(ctx) {
+                        // Call original draw function if it exists
+                        if (originalOnDrawForeground) {
+                            originalOnDrawForeground.apply(this, arguments);
+                        }
+
+                        // Draw our custom image preview
+                        if (node.previewImage && node.previewImage.complete && node.previewImage.naturalWidth > 0) {
+                            const img = node.previewImage;
+
+                            // Calculate available space (below widgets)
+                            // Find the bottom-most widget position
+                            let widgetsEndY = LiteGraph.NODE_TITLE_HEIGHT || 30;
+
+                            if (node.widgets && node.widgets.length > 0) {
+                                // Use the last_y property from the last widget if available
+                                const lastWidget = node.widgets[node.widgets.length - 1];
+                                if (lastWidget.last_y !== undefined) {
+                                    widgetsEndY = lastWidget.last_y;
+                                } else {
+                                    // Fallback: sum all widget heights
+                                    widgetsEndY = LiteGraph.NODE_TITLE_HEIGHT || 30;
+                                    for (const w of node.widgets) {
+                                        const height = w.computeSize ? w.computeSize()[1] : (LiteGraph.NODE_WIDGET_HEIGHT || 25);
+                                        widgetsEndY += height;
+                                    }
+                                }
+                            }
+
+                            // Add generous margins to separate from widgets
+                            const topMargin = 35;
+                            const bottomMargin = 20;
+                            const sideMargin = 10;
+
+                            const availableY = widgetsEndY + topMargin;
+                            const availableHeight = node.size[1] - availableY - bottomMargin;
+                            const availableWidth = node.size[0] - sideMargin * 2;
+
+                            if (availableHeight > 20 && availableWidth > 20) {
+                                // Calculate scaled dimensions to fit
+                                const imgAspect = img.naturalWidth / img.naturalHeight;
+                                let drawWidth = availableWidth;
+                                let drawHeight = drawWidth / imgAspect;
+
+                                if (drawHeight > availableHeight) {
+                                    drawHeight = availableHeight;
+                                    drawWidth = drawHeight * imgAspect;
+                                }
+
+                                // Center the image horizontally, position vertically in available space
+                                const x = sideMargin + (availableWidth - drawWidth) / 2;
+                                const y = availableY + (availableHeight - drawHeight) / 2;
+
+                                // Draw image
+                                ctx.save();
+                                ctx.drawImage(img, x, y, drawWidth, drawHeight);
+                                ctx.restore();
+
+                                // Draw image dimensions text
+                                ctx.save();
+                                ctx.fillStyle = "#AAA";
+                                ctx.font = "10px monospace";
+                                ctx.textAlign = "center";
+                                const dimText = `${img.naturalWidth} × ${img.naturalHeight}`;
+                                ctx.fillText(dimText, node.size[0] / 2, y + drawHeight + 12);
+                                ctx.restore();
+                            }
+                        }
+                    };
 
                     // Function to load and display image preview
                     const updateImagePreview = (filename) => {
-                        if (!filename) {
-                            node.imgs = null;
+                        // Clear preview if no valid filename
+                        if (!filename || filename === "" || filename === undefined || filename === null) {
+                            node.previewImage = null;
+                            app.graph.setDirtyCanvas(true, true);
                             return;
                         }
 
@@ -663,26 +737,32 @@ app.registerExtension({
 
                         console.debug("updateImagePreview - directory:", directory, "subdirectory:", subdirectory, "filename:", filename);
 
+                        // Clear current preview immediately
+                        node.previewImage = null;
+
                         // Create image preview
                         const img = new Image();
                         img.onload = () => {
                             console.debug("Image loaded successfully");
-                            app.graph.setDirtyCanvas(true, true);
+                            // Only set preview after successful load
+                            if (img.complete && img.naturalWidth > 0) {
+                                node.previewImage = img;
+                                app.graph.setDirtyCanvas(true, true);
+                            } else {
+                                console.error("Image onload fired but image not actually loaded");
+                            }
                         };
                         img.onerror = () => {
                             console.error("Failed to load image from preview URL");
+                            node.previewImage = null;
+                            app.graph.setDirtyCanvas(true, true);
                         };
 
                         // Build API URL for image with preview optimization
-                        // Use preview parameter to get a smaller/compressed version
                         const previewParams = app.getPreviewFormatParam ? app.getPreviewFormatParam() : '';
                         img.src = `/view?filename=${encodeURIComponent(filename)}&type=${directory}&subfolder=${encodeURIComponent(subdirectory)}${previewParams}&preview=true&channel=rgba&rand=${Math.random()}`;
 
                         console.debug("Preview URL:", img.src);
-
-                        // Set node preview
-                        node.imgs = [img];
-                        node.imageIndex = 0;
                     };
 
                     // Function to update image list
@@ -701,20 +781,28 @@ app.registerExtension({
                                 const data = await response.json();
                                 console.debug("API returned:", data);
 
-                                // Update image widget options (just use the filenames directly)
-                                imageWidget.options.values = data.images.length > 0 ? data.images : [""];
-
-                                // Preserve previous value if it still exists in the list
-                                if (data.images.length > 0 && data.images.includes(prevValue)) {
-                                    imageWidget.value = prevValue;
-                                } else if (data.images.length > 0) {
-                                    imageWidget.value = data.images[0];
+                                // Update image widget options
+                                if (data.images.length > 0) {
+                                    imageWidget.options.values = data.images;
+                                    // Preserve previous value if it still exists in the list
+                                    if (data.images.includes(prevValue)) {
+                                        imageWidget.value = prevValue;
+                                    } else {
+                                        imageWidget.value = data.images[0];
+                                    }
+                                    // Update image preview with valid image
+                                    updateImagePreview(imageWidget.value);
                                 } else {
+                                    // No images available - clear everything
+                                    imageWidget.options.values = [];
                                     imageWidget.value = "";
+
+                                    // Clear preview - we handle this ourselves with custom drawing
+                                    node.previewImage = null;
                                 }
 
-                                // Update image preview
-                                updateImagePreview(imageWidget.value);
+                                // Force node to update its display
+                                node.setDirtyCanvas(true, true);
 
                                 console.debug("Updated imageWidget.options.values:", imageWidget.options.values);
                                 console.debug("Updated imageWidget.value:", imageWidget.value);
@@ -726,11 +814,23 @@ app.registerExtension({
                         }
                     };
 
-                    // Hook into directory widget change
-                    directoryWidget.callback = updateImageList;
+                    // Hook into directory widget change - preserve original callback
+                    const originalDirectoryCallback = directoryWidget.callback;
+                    directoryWidget.callback = function(value) {
+                        if (originalDirectoryCallback) {
+                            originalDirectoryCallback.apply(this, arguments);
+                        }
+                        updateImageList();
+                    };
 
-                    // Hook into subdirectory widget change
-                    subdirectoryWidget.callback = updateImageList;
+                    // Hook into subdirectory widget change - preserve original callback
+                    const originalSubdirectoryCallback = subdirectoryWidget.callback;
+                    subdirectoryWidget.callback = function(value) {
+                        if (originalSubdirectoryCallback) {
+                            originalSubdirectoryCallback.apply(this, arguments);
+                        }
+                        updateImageList();
+                    };
 
                     // Hook into image widget change to update preview
                     const originalImageCallback = imageWidget.callback;

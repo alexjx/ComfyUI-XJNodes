@@ -326,13 +326,31 @@ class XJLoadImageWithMetadata:
             "required": {
                 "directory": (["input", "output"],),
                 "subdirectory": ("STRING", {"default": ""}),
-                "image": ((), {"image_upload": True}),
+                "image": ([""],),  # Combo populated dynamically by JS
             }
         }
 
     CATEGORY = "XJNode/image"
-    RETURN_TYPES = ("IMAGE", "MASK", "STRING", "STRING", "INT", "INT", "STRING", "STRING")
-    RETURN_NAMES = ("image", "mask", "file_path", "file_name", "width", "height", "format", "metadata")
+    RETURN_TYPES = (
+        "IMAGE",
+        "MASK",
+        "STRING",
+        "STRING",
+        "INT",
+        "INT",
+        "STRING",
+        "STRING",
+    )
+    RETURN_NAMES = (
+        "image",
+        "mask",
+        "file_path",
+        "file_name",
+        "width",
+        "height",
+        "format",
+        "metadata",
+    )
     FUNCTION = "load_image"
 
     def load_image(self, directory, subdirectory, image):
@@ -343,7 +361,7 @@ class XJLoadImageWithMetadata:
             base_dir = folder_paths.get_output_directory()
 
         # Clean subdirectory: remove leading/trailing slashes
-        subdirectory = subdirectory.strip().strip('/')
+        subdirectory = subdirectory.strip().strip("/")
 
         # Construct full path
         if subdirectory:
@@ -417,7 +435,16 @@ class XJLoadImageWithMetadata:
 
         metadata_json = json.dumps(all_metadata) if all_metadata else "{}"
 
-        return (output_image, output_mask, image_path, file_name, width, height, image_format, metadata_json)
+        return (
+            output_image,
+            output_mask,
+            image_path,
+            file_name,
+            width,
+            height,
+            image_format,
+            metadata_json,
+        )
 
     @classmethod
     def IS_CHANGED(s, directory, subdirectory, image):
@@ -428,7 +455,7 @@ class XJLoadImageWithMetadata:
             base_dir = folder_paths.get_output_directory()
 
         # Clean subdirectory: remove leading/trailing slashes
-        subdirectory = subdirectory.strip().strip('/')
+        subdirectory = subdirectory.strip().strip("/")
 
         # Construct full path
         if subdirectory:
@@ -448,6 +475,10 @@ class XJLoadImageWithMetadata:
 
     @classmethod
     def VALIDATE_INPUTS(s, directory, subdirectory, image):
+        # Allow empty image (e.g., when switching directories with no images)
+        if not image or image == "":
+            return True
+
         # Get base directory
         if directory == "input":
             base_dir = folder_paths.get_input_directory()
@@ -455,7 +486,7 @@ class XJLoadImageWithMetadata:
             base_dir = folder_paths.get_output_directory()
 
         # Clean subdirectory: remove leading/trailing slashes
-        subdirectory = subdirectory.strip().strip('/')
+        subdirectory = subdirectory.strip().strip("/")
 
         # Construct full path
         if subdirectory:

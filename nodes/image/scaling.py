@@ -134,12 +134,16 @@ Scale image to target megapixels.
                     new_width = self._round_to_multiple(
                         math.sqrt(target_pixels * aspect_ratio), round_to
                     )
-                    new_height = self._round_to_multiple(new_width / aspect_ratio, round_to)
+                    new_height = self._round_to_multiple(
+                        new_width / aspect_ratio, round_to
+                    )
                 else:  # taller than wide
                     new_height = self._round_to_multiple(
                         math.sqrt(target_pixels / aspect_ratio), round_to
                     )
-                    new_width = self._round_to_multiple(new_height * aspect_ratio, round_to)
+                    new_width = self._round_to_multiple(
+                        new_height * aspect_ratio, round_to
+                    )
 
             crop_mode = "center"
 

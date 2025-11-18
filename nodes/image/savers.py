@@ -14,23 +14,27 @@ def parse_filename_tokens(text):
     """Parse filename tokens similar to WAS nodes"""
     # Basic tokens
     tokens = {
-        '[time]': str(int(time.time())),
-        '[hostname]': socket.gethostname(),
+        "[time]": str(int(time.time())),
+        "[hostname]": socket.gethostname(),
     }
 
     # Try to get username
     try:
-        tokens['[user]'] = os.getlogin() if os.getlogin() else 'user'
+        tokens["[user]"] = os.getlogin() if os.getlogin() else "user"
     except Exception:
-        tokens['[user]'] = 'user'
+        tokens["[user]"] = "user"
 
     # Try to get CUDA info
     try:
-        tokens['[cuda_device]'] = str(comfy.model_management.get_torch_device())
-        tokens['[cuda_name]'] = str(comfy.model_management.get_torch_device_name(device=comfy.model_management.get_torch_device()))
+        tokens["[cuda_device]"] = str(comfy.model_management.get_torch_device())
+        tokens["[cuda_name]"] = str(
+            comfy.model_management.get_torch_device_name(
+                device=comfy.model_management.get_torch_device()
+            )
+        )
     except Exception:
-        tokens['[cuda_device]'] = 'cpu'
-        tokens['[cuda_name]'] = 'unknown'
+        tokens["[cuda_device]"] = "cpu"
+        tokens["[cuda_name]"] = "unknown"
 
     # Replace simple tokens
     for token, value in tokens.items():
@@ -41,7 +45,7 @@ def parse_filename_tokens(text):
         format_code = match.group(1)
         return time.strftime(format_code, time.localtime(time.time()))
 
-    text = re.sub(r'\[time\((.*?)\)\]', replace_time_format, text)
+    text = re.sub(r"\[time\((.*?)\)\]", replace_time_format, text)
 
     return text
 
@@ -70,10 +74,7 @@ class XJSaveImageWithMetadata:
                 "embed_workflow": ("BOOLEAN", {"default": True}),
                 "metadata": ("STRING", {"default": "", "multiline": True}),
             },
-            "hidden": {
-                "prompt": "PROMPT",
-                "extra_pnginfo": "EXTRA_PNGINFO"
-            },
+            "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
 
     RETURN_TYPES = ("STRING",)
@@ -174,7 +175,9 @@ class XJSaveImageWithMetadata:
                     # JPEG doesn't support PNG metadata, convert to RGB
                     if img.mode != "RGB":
                         img = img.convert("RGB")
-                    img.save(file_path, quality=quality, optimize=optimize, dpi=(dpi, dpi))
+                    img.save(
+                        file_path, quality=quality, optimize=optimize, dpi=(dpi, dpi)
+                    )
                 elif extension == "webp":
                     img.save(
                         file_path,
@@ -189,7 +192,9 @@ class XJSaveImageWithMetadata:
                 elif extension == "bmp":
                     img.save(file_path)
                 elif extension == "tiff":
-                    img.save(file_path, quality=quality, optimize=optimize, dpi=(dpi, dpi))
+                    img.save(
+                        file_path, quality=quality, optimize=optimize, dpi=(dpi, dpi)
+                    )
                 else:
                     img.save(file_path, pnginfo=exif_data, optimize=optimize)
 

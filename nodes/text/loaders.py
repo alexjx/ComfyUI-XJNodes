@@ -176,9 +176,7 @@ class XJTextListFromFile:
 
         # Remove empty lines and comments
         text_list = [text.strip().lstrip("- ") for text in text_list]
-        text_list = [
-            text for text in text_list if text and not text.startswith("#")
-        ]
+        text_list = [text for text in text_list if text and not text.startswith("#")]
 
         # Return as list
         return (text_list,)

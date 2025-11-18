@@ -89,14 +89,14 @@ class XJJSONExtractor:
 
             # After navigating, check if we need to parse nested JSON
             # Only if: 1) we have more keys to process, 2) current value is a string
-            remaining_keys = keys[i + 1:]
+            remaining_keys = keys[i + 1 :]
             if remaining_keys and isinstance(current, str):
                 # Try to parse as JSON
                 try:
                     current = json.loads(current)
                 except json.JSONDecodeError as e:
                     raise ValueError(
-                        f"Failed to parse nested JSON at path '{'.'.join(keys[:i+1])}'. "
+                        f"Failed to parse nested JSON at path '{'.'.join(keys[: i + 1])}'. "
                         f"Expected JSON but got: {current[:100]}... "
                         f"Error: {str(e)}"
                     )
