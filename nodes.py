@@ -1,15 +1,22 @@
 import os
 import random
 import math
+import json
+import time
+import re
+import socket
 
 import numpy as np
 import torch
 import torchvision.transforms.v2 as T
-from PIL import Image, ImageEnhance, ImageOps
+from PIL import Image, ImageEnhance, ImageOps, ImageSequence
+from PIL.PngImagePlugin import PngInfo
 
 import comfy.samplers
 import comfy.utils
+import comfy.model_management
 import folder_paths
+import node_helpers
 
 
 class XJSchedulerAdapter:
@@ -1235,14 +1242,21 @@ class XJRandomTextFromList:
 class XJRandomTextFromFile:
     @classmethod
     def INPUT_TYPES(s):
+        # Enumerate .txt and .md files from input directory
+        input_dir = folder_paths.get_input_directory()
+        files = []
+        if os.path.exists(input_dir):
+            files = [
+                f
+                for f in os.listdir(input_dir)
+                if os.path.isfile(os.path.join(input_dir, f))
+                and (f.lower().endswith(".txt") or f.lower().endswith(".md"))
+            ]
+        files = sorted(files) if files else [""]
+
         return {
             "required": {
-                "file_path": (
-                    "STRING",
-                    {
-                        "default": "outfits.md",
-                    },
-                ),
+                "file_path": (files, {"default": files[0] if files else ""}),
                 "type": (("fixed", "random"),),
                 "choice": (
                     "INT",
@@ -1296,6 +1310,446 @@ class XJRandomTextFromFile:
             selected_text = random.choice(text_list)
 
         return (selected_text,)
+
+
+class XJTextFileInfo:
+    """Get metadata about a text file (line count, etc.)"""
+
+    @classmethod
+    def INPUT_TYPES(s):
+        # Enumerate .txt and .md files from input directory
+        input_dir = folder_paths.get_input_directory()
+        files = []
+        if os.path.exists(input_dir):
+            files = [
+                f
+                for f in os.listdir(input_dir)
+                if os.path.isfile(os.path.join(input_dir, f))
+                and (f.lower().endswith(".txt") or f.lower().endswith(".md"))
+            ]
+        files = sorted(files) if files else [""]
+
+        return {
+            "required": {
+                "file_path": (files, {"default": files[0] if files else ""}),
+            }
+        }
+
+    RETURN_TYPES = ("INT", "STRING")
+    RETURN_NAMES = ("line_count", "file_name")
+    FUNCTION = "get_info"
+    CATEGORY = "XJNode/text"
+
+    def get_info(self, file_path):
+        input_dir = folder_paths.get_input_directory()
+        full_path = os.path.join(input_dir, file_path)
+
+        if not os.path.exists(full_path):
+            return (0, file_path)
+
+        # Read and count valid lines (same logic as XJRandomTextFromFile)
+        with open(full_path, "r", encoding="utf-8") as f:
+            text_list = f.read().splitlines()
+
+        # Remove empty lines and comments
+        text_list = [text.strip().lstrip("- ") for text in text_list]
+        text_list = [
+            text for text in text_list if text and not text.startswith("#")
+        ]
+
+        line_count = len(text_list)
+
+        return (line_count, file_path)
+
+
+class XJTextListFromFile:
+    """Load all valid lines from a text file as a list"""
+
+    @classmethod
+    def INPUT_TYPES(s):
+        # Enumerate .txt and .md files from input directory
+        input_dir = folder_paths.get_input_directory()
+        files = []
+        if os.path.exists(input_dir):
+            files = [
+                f
+                for f in os.listdir(input_dir)
+                if os.path.isfile(os.path.join(input_dir, f))
+                and (f.lower().endswith(".txt") or f.lower().endswith(".md"))
+            ]
+        files = sorted(files) if files else [""]
+
+        return {
+            "required": {
+                "file_path": (files, {"default": files[0] if files else ""}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("text_list",)
+    OUTPUT_IS_LIST = (True,)
+    FUNCTION = "load_list"
+    CATEGORY = "XJNode/text"
+
+    def load_list(self, file_path):
+        input_dir = folder_paths.get_input_directory()
+        full_path = os.path.join(input_dir, file_path)
+
+        if not os.path.exists(full_path):
+            return ([],)
+
+        # Read and process lines (same logic as XJRandomTextFromFile)
+        with open(full_path, "r", encoding="utf-8") as f:
+            text_list = f.read().splitlines()
+
+        # Remove empty lines and comments
+        text_list = [text.strip().lstrip("- ") for text in text_list]
+        text_list = [
+            text for text in text_list if text and not text.startswith("#")
+        ]
+
+        # Return as list
+        return (text_list,)
+
+
+class XJLoadImageWithMetadata:
+    """Load image with file path and metadata - supports input/output directories"""
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "directory": (["input", "output"],),
+                "subdirectory": ("STRING", {"default": ""}),
+                "image": ((), {"image_upload": True}),
+            }
+        }
+
+    CATEGORY = "XJNode/image"
+    RETURN_TYPES = ("IMAGE", "MASK", "STRING", "STRING", "INT", "INT", "STRING", "STRING")
+    RETURN_NAMES = ("image", "mask", "file_path", "file_name", "width", "height", "format", "metadata")
+    FUNCTION = "load_image"
+
+    def load_image(self, directory, subdirectory, image):
+        # Get base directory
+        if directory == "input":
+            base_dir = folder_paths.get_input_directory()
+        else:  # output
+            base_dir = folder_paths.get_output_directory()
+
+        # Construct full path
+        if subdirectory:
+            full_dir = os.path.join(base_dir, subdirectory)
+        else:
+            full_dir = base_dir
+
+        image_path = os.path.join(full_dir, image)
+
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+
+        img = node_helpers.pillow(Image.open, image_path)
+
+        output_images = []
+        output_masks = []
+        w, h = None, None
+
+        excluded_formats = ["MPO"]
+
+        for i in ImageSequence.Iterator(img):
+            i = node_helpers.pillow(ImageOps.exif_transpose, i)
+
+            if i.mode == "I":
+                i = i.point(lambda i: i * (1 / 255))
+            image_converted = i.convert("RGB")
+
+            if len(output_images) == 0:
+                w = image_converted.size[0]
+                h = image_converted.size[1]
+
+            if image_converted.size[0] != w or image_converted.size[1] != h:
+                continue
+
+            image_array = np.array(image_converted).astype(np.float32) / 255.0
+            image_tensor = torch.from_numpy(image_array)[None,]
+
+            if "A" in i.getbands():
+                mask = np.array(i.getchannel("A")).astype(np.float32) / 255.0
+                mask = 1.0 - torch.from_numpy(mask)
+            elif i.mode == "P" and "transparency" in i.info:
+                mask = (
+                    np.array(i.convert("RGBA").getchannel("A")).astype(np.float32)
+                    / 255.0
+                )
+                mask = 1.0 - torch.from_numpy(mask)
+            else:
+                mask = torch.zeros((64, 64), dtype=torch.float32, device="cpu")
+
+            output_images.append(image_tensor)
+            output_masks.append(mask.unsqueeze(0))
+
+        if len(output_images) > 1 and img.format not in excluded_formats:
+            output_image = torch.cat(output_images, dim=0)
+            output_mask = torch.cat(output_masks, dim=0)
+        else:
+            output_image = output_images[0]
+            output_mask = output_masks[0]
+
+        # Get metadata
+        file_name = os.path.basename(image_path)
+        image_format = img.format if img.format else "UNKNOWN"
+        width = w if w else 0
+        height = h if h else 0
+
+        # Read all metadata from PNG text chunks as JSON
+        all_metadata = {}
+        if hasattr(img, "text") and img.text:
+            # Return all PNG text chunks including workflow
+            all_metadata = dict(img.text)
+
+        metadata_json = json.dumps(all_metadata) if all_metadata else "{}"
+
+        return (output_image, output_mask, image_path, file_name, width, height, image_format, metadata_json)
+
+    @classmethod
+    def IS_CHANGED(s, directory, subdirectory, image):
+        # Get base directory
+        if directory == "input":
+            base_dir = folder_paths.get_input_directory()
+        else:
+            base_dir = folder_paths.get_output_directory()
+
+        # Construct full path
+        if subdirectory:
+            full_dir = os.path.join(base_dir, subdirectory)
+        else:
+            full_dir = base_dir
+
+        image_path = os.path.join(full_dir, image)
+
+        import hashlib
+        m = hashlib.sha256()
+        try:
+            with open(image_path, "rb") as f:
+                m.update(f.read())
+            return m.digest().hex()
+        except:
+            return ""
+
+    @classmethod
+    def VALIDATE_INPUTS(s, directory, subdirectory, image):
+        # Get base directory
+        if directory == "input":
+            base_dir = folder_paths.get_input_directory()
+        else:
+            base_dir = folder_paths.get_output_directory()
+
+        # Construct full path
+        if subdirectory:
+            full_dir = os.path.join(base_dir, subdirectory)
+        else:
+            full_dir = base_dir
+
+        image_path = os.path.join(full_dir, image)
+
+        if not os.path.exists(image_path):
+            return "Invalid image file: {}".format(image)
+        return True
+
+
+def parse_filename_tokens(text):
+    """Parse filename tokens similar to WAS nodes"""
+    # Basic tokens
+    tokens = {
+        '[time]': str(int(time.time())),
+        '[hostname]': socket.gethostname(),
+    }
+
+    # Try to get username
+    try:
+        tokens['[user]'] = os.getlogin() if os.getlogin() else 'user'
+    except Exception:
+        tokens['[user]'] = 'user'
+
+    # Try to get CUDA info
+    try:
+        tokens['[cuda_device]'] = str(comfy.model_management.get_torch_device())
+        tokens['[cuda_name]'] = str(comfy.model_management.get_torch_device_name(device=comfy.model_management.get_torch_device()))
+    except Exception:
+        tokens['[cuda_device]'] = 'cpu'
+        tokens['[cuda_name]'] = 'unknown'
+
+    # Replace simple tokens
+    for token, value in tokens.items():
+        text = text.replace(token, value)
+
+    # Handle [time(%Y-%m-%d)] format tokens
+    def replace_time_format(match):
+        format_code = match.group(1)
+        return time.strftime(format_code, time.localtime(time.time()))
+
+    text = re.sub(r'\[time\((.*?)\)\]', replace_time_format, text)
+
+    return text
+
+
+class XJSaveImageWithMetadata:
+    """Save image with custom metadata - full featured like WAS Image Save"""
+
+    def __init__(self):
+        self.output_dir = folder_paths.get_output_directory()
+        self.type = "output"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "images": ("IMAGE",),
+                "output_path": ("STRING", {"default": "", "multiline": False}),
+                "filename_prefix": ("STRING", {"default": "ComfyUI"}),
+                "extension": (["png", "jpg", "jpeg", "webp", "bmp", "tiff"],),
+                "quality": ("INT", {"default": 95, "min": 1, "max": 100, "step": 1}),
+                "dpi": ("INT", {"default": 300, "min": 72, "max": 2400, "step": 1}),
+            },
+            "optional": {
+                "optimize": ("BOOLEAN", {"default": True}),
+                "lossless_webp": ("BOOLEAN", {"default": False}),
+                "embed_workflow": ("BOOLEAN", {"default": True}),
+                "metadata": ("STRING", {"default": "", "multiline": True}),
+            },
+            "hidden": {
+                "prompt": "PROMPT",
+                "extra_pnginfo": "EXTRA_PNGINFO"
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("file_paths",)
+    OUTPUT_IS_LIST = (True,)
+    FUNCTION = "save_images"
+    OUTPUT_NODE = True
+    CATEGORY = "XJNode/image"
+
+    def save_images(
+        self,
+        images,
+        output_path="",
+        filename_prefix="ComfyUI",
+        extension="png",
+        quality=95,
+        dpi=300,
+        optimize=True,
+        lossless_webp=False,
+        embed_workflow=True,
+        metadata="",
+        prompt=None,
+        extra_pnginfo=None,
+    ):
+        # Parse tokens in filename_prefix and output_path
+        filename_prefix = parse_filename_tokens(filename_prefix)
+        output_path = parse_filename_tokens(output_path)
+
+        # Setup output path
+        if output_path in [None, "", "none", "."]:
+            output_folder = self.output_dir
+        else:
+            if not os.path.isabs(output_path):
+                output_folder = os.path.join(self.output_dir, output_path)
+            else:
+                output_folder = output_path
+
+        # Create output directory if it doesn't exist
+        if not os.path.exists(output_folder):
+            os.makedirs(output_folder, exist_ok=True)
+
+        # Get counter for filename
+        full_output_folder, filename, counter, subfolder, filename_prefix = (
+            folder_paths.get_save_image_path(
+                filename_prefix, output_folder, images[0].shape[1], images[0].shape[0]
+            )
+        )
+
+        results = []
+        file_paths = []
+
+        for batch_number, image in enumerate(images):
+            i = 255.0 * image.cpu().numpy()
+            img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
+
+            # Prepare metadata based on format
+            if extension == "webp":
+                # WebP uses EXIF
+                img_exif = img.getexif()
+                if embed_workflow:
+                    if prompt is not None:
+                        img_exif[0x010F] = "Prompt:" + json.dumps(prompt)
+                    if extra_pnginfo is not None:
+                        workflow_metadata = ""
+                        for x in extra_pnginfo:
+                            workflow_metadata += json.dumps(extra_pnginfo[x])
+                        img_exif[0x010E] = "Workflow:" + workflow_metadata
+
+                # Add custom metadata to EXIF UserComment
+                if metadata:
+                    img_exif[0x9286] = metadata  # UserComment
+
+                exif_data = img_exif.tobytes()
+            else:
+                # PNG, TIFF, BMP use PngInfo
+                pnginfo = PngInfo()
+                if embed_workflow:
+                    if prompt is not None:
+                        pnginfo.add_text("prompt", json.dumps(prompt))
+                    if extra_pnginfo is not None:
+                        for x in extra_pnginfo:
+                            pnginfo.add_text(x, json.dumps(extra_pnginfo[x]))
+
+                # Add custom metadata to our dedicated key
+                if metadata:
+                    pnginfo.add_text("xj_metadata", metadata)
+
+                exif_data = pnginfo
+
+            # Generate filename
+            filename_with_batch_num = filename.replace("%batch_num%", str(batch_number))
+            file = f"{filename_with_batch_num}_{counter:05}_.{extension}"
+            file_path = os.path.join(full_output_folder, file)
+
+            # Save image based on format
+            try:
+                if extension in ["jpg", "jpeg"]:
+                    # JPEG doesn't support PNG metadata, convert to RGB
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                    img.save(file_path, quality=quality, optimize=optimize, dpi=(dpi, dpi))
+                elif extension == "webp":
+                    img.save(
+                        file_path,
+                        quality=quality,
+                        lossless=lossless_webp,
+                        exif=exif_data,
+                    )
+                elif extension == "png":
+                    img.save(
+                        file_path, pnginfo=exif_data, optimize=optimize, dpi=(dpi, dpi)
+                    )
+                elif extension == "bmp":
+                    img.save(file_path)
+                elif extension == "tiff":
+                    img.save(file_path, quality=quality, optimize=optimize, dpi=(dpi, dpi))
+                else:
+                    img.save(file_path, pnginfo=exif_data, optimize=optimize)
+
+                file_paths.append(file_path)
+                results.append(
+                    {"filename": file, "subfolder": subfolder, "type": self.type}
+                )
+                counter += 1
+
+            except Exception as e:
+                print(f"Error saving {file_path}: {e}")
+
+        return {"ui": {"images": results}, "result": (file_paths,)}
 
 
 class XJRandomImagesFromBatch:
@@ -1422,6 +1876,10 @@ NODE_CLASS_MAPPINGS = {
     "XJImageListFilter": XJImageListFilter,
     "XJRandomTextFromList": XJRandomTextFromList,
     "XJRandomTextFromFile": XJRandomTextFromFile,
+    "XJTextFileInfo": XJTextFileInfo,
+    "XJTextListFromFile": XJTextListFromFile,
+    "XJLoadImageWithMetadata": XJLoadImageWithMetadata,
+    "XJSaveImageWithMetadata": XJSaveImageWithMetadata,
     "XJRandomImagesFromBatch": XJRandomImagesFromBatch,
 }
 
@@ -1446,5 +1904,9 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "XJImageListFilter": "Image List Filter",
     "XJRandomTextFromList": "Random Text From List",
     "XJRandomTextFromFile": "Random Text From File",
+    "XJTextFileInfo": "Text File Info",
+    "XJTextListFromFile": "Text List From File",
+    "XJLoadImageWithMetadata": "Load Image With Metadata",
+    "XJSaveImageWithMetadata": "Save Image With Metadata",
     "XJRandomImagesFromBatch": "Random Images From Batch",
 }

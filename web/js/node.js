@@ -1,5 +1,8 @@
 import { app } from "/scripts/app.js";
 
+// Registry for node update functions (to support refresh)
+const registeredNodes = {};
+
 // Function to process text according to XJRandomTextFromList logic
 function processTextList(text) {
     const lines = text.split('\n');
@@ -326,6 +329,190 @@ app.registerExtension({
 
                 return result;
             };
+        }
+
+        // Handle XJRandomTextFromFile node
+        if (nodeData.name === "XJRandomTextFromFile") {
+            const originalNodeCreated = nodeType.prototype.onNodeCreated;
+
+            nodeType.prototype.onNodeCreated = function () {
+                const result = originalNodeCreated?.apply(this, arguments);
+
+                const filePathWidget = this.widgets.find(w => w.name === "file_path");
+                const choiceWidget = this.widgets.find(w => w.name === "choice");
+
+                if (filePathWidget && choiceWidget) {
+                    // Function to update choice max value based on selected file
+                    const updateChoiceMax = async (filename) => {
+                        if (!filename) {
+                            choiceWidget.options.max = 1;
+                            return;
+                        }
+
+                        try {
+                            const response = await fetch(`/xjnodes/get_text_file_lines?filename=${encodeURIComponent(filename)}`);
+                            if (response.ok) {
+                                const data = await response.json();
+                                choiceWidget.options.max = data.max_choice;
+
+                                // Clamp current choice value to valid range
+                                if (choiceWidget.value > data.max_choice) {
+                                    choiceWidget.value = data.max_choice;
+                                }
+                                if (choiceWidget.value < 1) {
+                                    choiceWidget.value = 1;
+                                }
+
+                                // Force node to redraw
+                                this.setDirtyCanvas(true, true);
+                            }
+                        } catch (error) {
+                            console.error("Error fetching text file line count:", error);
+                        }
+                    };
+
+                    // Store original callback
+                    const originalCallback = filePathWidget.callback;
+
+                    // Override the callback to update choice max when file changes
+                    filePathWidget.callback = function(value) {
+                        if (originalCallback) {
+                            originalCallback.apply(this, arguments);
+                        }
+                        updateChoiceMax.call(nodeType.prototype.onNodeCreated, value);
+                    };
+
+                    // Initialize choice widget settings
+                    choiceWidget.options.min = 1;
+                    if (choiceWidget.value < 1) {
+                        choiceWidget.value = 1;
+                    }
+
+                    // Update max value on initial load
+                    if (filePathWidget.value) {
+                        updateChoiceMax.call(this, filePathWidget.value);
+                    }
+                }
+
+                return result;
+            };
+        }
+
+        // Handle XJLoadImageWithMetadata node
+        if (nodeData.name === "XJLoadImageWithMetadata") {
+            const originalNodeCreated = nodeType.prototype.onNodeCreated;
+
+            nodeType.prototype.onNodeCreated = async function () {
+                const result = originalNodeCreated?.apply(this, arguments);
+
+                const directoryWidget = this.widgets.find(w => w.name === "directory");
+                const subdirectoryWidget = this.widgets.find(w => w.name === "subdirectory");
+                const imageWidget = this.widgets.find(w => w.name === "image");
+
+                if (directoryWidget && subdirectoryWidget && imageWidget) {
+                    // Ensure the image widget has proper image_upload flag for preview
+                    imageWidget.options.image_upload = true;
+
+                    // Function to load and display image preview
+                    const updateImagePreview = (filename) => {
+                        if (!filename) {
+                            node.imgs = null;
+                            return;
+                        }
+
+                        const directory = directoryWidget.value;
+                        const subdirectory = subdirectoryWidget.value || "";
+
+                        // Create image preview
+                        const img = new Image();
+                        img.onload = () => {
+                            app.graph.setDirtyCanvas(true, true);
+                        };
+
+                        // Build API URL for image with preview optimization
+                        // Use preview parameter to get a smaller/compressed version
+                        const previewParams = app.getPreviewFormatParam ? app.getPreviewFormatParam() : '';
+                        img.src = `/view?filename=${encodeURIComponent(filename)}&type=${directory}&subfolder=${encodeURIComponent(subdirectory)}${previewParams}&preview=true&channel=rgba&rand=${Math.random()}`;
+
+                        // Set node preview
+                        node.imgs = [img];
+                        node.imageIndex = 0;
+                    };
+
+                    // Function to update image list
+                    const updateImageList = async () => {
+                        const directory = directoryWidget.value;
+                        const subdirectory = subdirectoryWidget.value || "";
+                        const prevValue = imageWidget.value;
+
+                        try {
+                            const response = await fetch(`/xjnodes/list_images?directory=${encodeURIComponent(directory)}&subdirectory=${encodeURIComponent(subdirectory)}`);
+                            if (response.ok) {
+                                const data = await response.json();
+
+                                // Update image widget options (just use the filenames directly)
+                                imageWidget.options.values = data.images.length > 0 ? data.images : [""];
+
+                                // Preserve previous value if it still exists in the list
+                                if (data.images.length > 0 && data.images.includes(prevValue)) {
+                                    imageWidget.value = prevValue;
+                                } else if (data.images.length > 0) {
+                                    imageWidget.value = data.images[0];
+                                } else {
+                                    imageWidget.value = "";
+                                }
+
+                                // Update image preview
+                                updateImagePreview(imageWidget.value);
+
+                                console.debug("Updated imageWidget.options.values:", imageWidget.options.values);
+                                console.debug("Updated imageWidget.value:", imageWidget.value);
+                            }
+                        } catch (error) {
+                            console.error("Error fetching image list:", error);
+                        }
+                    };
+
+                    // Hook into directory widget change
+                    directoryWidget.callback = updateImageList;
+
+                    // Hook into subdirectory widget change
+                    subdirectoryWidget.callback = updateImageList;
+
+                    // Hook into image widget change to update preview
+                    const originalImageCallback = imageWidget.callback;
+                    imageWidget.callback = function(value) {
+                        if (originalImageCallback) {
+                            originalImageCallback.apply(this, arguments);
+                        }
+                        updateImagePreview(value);
+                    };
+
+                    // Dummy function to get actual values from web page
+                    const dummy = async () => {
+                        // calling async method will update the widgets with actual value from the browser and not the default from Node definition.
+                    };
+
+                    // Initial update
+                    await dummy(); // this will cause the widgets to obtain the actual value from web page.
+                    await updateImageList();
+
+                    // Save the updateImageList method for refreshing later
+                    if (!registeredNodes[nodeData.name]) {
+                        registeredNodes[nodeData.name] = [];
+                    }
+                    registeredNodes[nodeData.name].push(updateImageList);
+                }
+
+                return result;
+            };
+
+            // Refresh existing nodes when node is re-registered (on refresh)
+            if (registeredNodes[nodeData.name]) {
+                for (const updateImageList of registeredNodes[nodeData.name]) {
+                    await updateImageList();
+                }
+            }
         }
     }
 });
