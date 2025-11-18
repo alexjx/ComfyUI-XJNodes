@@ -138,7 +138,7 @@ class XJImageNavigator {
         `;
         this.keyboardHelp.innerHTML = `
             <div style="margin-bottom: 4px;"><strong style="color: #fff;">S</strong> Back | <strong style="color: #fff;">F</strong> Forward</div>
-            <div style="margin-bottom: 4px;"><strong style="color: #fff;">Enter</strong> Select & Exit</div>
+            <div style="margin-bottom: 4px;"><strong style="color: #fff;">Enter / Click</strong> Select & Exit</div>
             <div><strong style="color: #fff;">ESC</strong> Exit</div>
         `;
 
@@ -177,9 +177,6 @@ class XJImageNavigator {
     }
 
     bindEvents() {
-        // Close button
-        this.closeBtn.onclick = () => this.close();
-
         // Keyboard events (only when modal is visible)
         this.keyHandler = (e) => {
             if (!this.isVisible) return;
@@ -208,11 +205,16 @@ class XJImageNavigator {
 
         document.addEventListener('keydown', this.keyHandler);
 
-        // Click outside to close
+        // Click anywhere on the dialog to close and select current image
         this.overlay.onclick = (e) => {
-            if (e.target === this.overlay) {
-                this.close();
-            }
+            // Close on any click (clicking anywhere selects and exits)
+            this.close();
+        };
+
+        // Prevent clicks on UI elements from bubbling up and closing
+        this.closeBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.close();
         };
     }
 
