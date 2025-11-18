@@ -1,0 +1,214 @@
+import os
+import time
+import re
+import socket
+import json
+import numpy as np
+from PIL import Image
+from PIL.PngImagePlugin import PngInfo
+import comfy.model_management
+import folder_paths
+
+
+def parse_filename_tokens(text):
+    """Parse filename tokens similar to WAS nodes"""
+    # Basic tokens
+    tokens = {
+        '[time]': str(int(time.time())),
+        '[hostname]': socket.gethostname(),
+    }
+
+    # Try to get username
+    try:
+        tokens['[user]'] = os.getlogin() if os.getlogin() else 'user'
+    except Exception:
+        tokens['[user]'] = 'user'
+
+    # Try to get CUDA info
+    try:
+        tokens['[cuda_device]'] = str(comfy.model_management.get_torch_device())
+        tokens['[cuda_name]'] = str(comfy.model_management.get_torch_device_name(device=comfy.model_management.get_torch_device()))
+    except Exception:
+        tokens['[cuda_device]'] = 'cpu'
+        tokens['[cuda_name]'] = 'unknown'
+
+    # Replace simple tokens
+    for token, value in tokens.items():
+        text = text.replace(token, value)
+
+    # Handle [time(%Y-%m-%d)] format tokens
+    def replace_time_format(match):
+        format_code = match.group(1)
+        return time.strftime(format_code, time.localtime(time.time()))
+
+    text = re.sub(r'\[time\((.*?)\)\]', replace_time_format, text)
+
+    return text
+
+
+class XJSaveImageWithMetadata:
+    """Save image with custom metadata - full featured like WAS Image Save"""
+
+    def __init__(self):
+        self.output_dir = folder_paths.get_output_directory()
+        self.type = "output"
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "images": ("IMAGE",),
+                "output_path": ("STRING", {"default": "", "multiline": False}),
+                "filename_prefix": ("STRING", {"default": "ComfyUI"}),
+                "extension": (["png", "jpg", "jpeg", "webp", "bmp", "tiff"],),
+                "quality": ("INT", {"default": 95, "min": 1, "max": 100, "step": 1}),
+                "dpi": ("INT", {"default": 300, "min": 72, "max": 2400, "step": 1}),
+            },
+            "optional": {
+                "optimize": ("BOOLEAN", {"default": True}),
+                "lossless_webp": ("BOOLEAN", {"default": False}),
+                "embed_workflow": ("BOOLEAN", {"default": True}),
+                "metadata": ("STRING", {"default": "", "multiline": True}),
+            },
+            "hidden": {
+                "prompt": "PROMPT",
+                "extra_pnginfo": "EXTRA_PNGINFO"
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("file_paths",)
+    OUTPUT_IS_LIST = (True,)
+    FUNCTION = "save_images"
+    OUTPUT_NODE = True
+    CATEGORY = "XJNode/image"
+
+    def save_images(
+        self,
+        images,
+        output_path="",
+        filename_prefix="ComfyUI",
+        extension="png",
+        quality=95,
+        dpi=300,
+        optimize=True,
+        lossless_webp=False,
+        embed_workflow=True,
+        metadata="",
+        prompt=None,
+        extra_pnginfo=None,
+    ):
+        # Parse tokens in filename_prefix and output_path
+        filename_prefix = parse_filename_tokens(filename_prefix)
+        output_path = parse_filename_tokens(output_path)
+
+        # Setup output path
+        if output_path in [None, "", "none", "."]:
+            output_folder = self.output_dir
+        else:
+            if not os.path.isabs(output_path):
+                output_folder = os.path.join(self.output_dir, output_path)
+            else:
+                output_folder = output_path
+
+        # Create output directory if it doesn't exist
+        if not os.path.exists(output_folder):
+            os.makedirs(output_folder, exist_ok=True)
+
+        # Get counter for filename
+        full_output_folder, filename, counter, subfolder, filename_prefix = (
+            folder_paths.get_save_image_path(
+                filename_prefix, output_folder, images[0].shape[1], images[0].shape[0]
+            )
+        )
+
+        results = []
+        file_paths = []
+
+        for batch_number, image in enumerate(images):
+            i = 255.0 * image.cpu().numpy()
+            img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
+
+            # Prepare metadata based on format
+            if extension == "webp":
+                # WebP uses EXIF
+                img_exif = img.getexif()
+                if embed_workflow:
+                    if prompt is not None:
+                        img_exif[0x010F] = "Prompt:" + json.dumps(prompt)
+                    if extra_pnginfo is not None:
+                        workflow_metadata = ""
+                        for x in extra_pnginfo:
+                            workflow_metadata += json.dumps(extra_pnginfo[x])
+                        img_exif[0x010E] = "Workflow:" + workflow_metadata
+
+                # Add custom metadata to EXIF UserComment
+                if metadata:
+                    img_exif[0x9286] = metadata  # UserComment
+
+                exif_data = img_exif.tobytes()
+            else:
+                # PNG, TIFF, BMP use PngInfo
+                pnginfo = PngInfo()
+                if embed_workflow:
+                    if prompt is not None:
+                        pnginfo.add_text("prompt", json.dumps(prompt))
+                    if extra_pnginfo is not None:
+                        for x in extra_pnginfo:
+                            pnginfo.add_text(x, json.dumps(extra_pnginfo[x]))
+
+                # Add custom metadata to our dedicated key
+                if metadata:
+                    pnginfo.add_text("xj_metadata", metadata)
+
+                exif_data = pnginfo
+
+            # Generate filename
+            filename_with_batch_num = filename.replace("%batch_num%", str(batch_number))
+            file = f"{filename_with_batch_num}_{counter:05}.{extension}"
+            file_path = os.path.join(full_output_folder, file)
+
+            # Save image based on format
+            try:
+                if extension in ["jpg", "jpeg"]:
+                    # JPEG doesn't support PNG metadata, convert to RGB
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                    img.save(file_path, quality=quality, optimize=optimize, dpi=(dpi, dpi))
+                elif extension == "webp":
+                    img.save(
+                        file_path,
+                        quality=quality,
+                        lossless=lossless_webp,
+                        exif=exif_data,
+                    )
+                elif extension == "png":
+                    img.save(
+                        file_path, pnginfo=exif_data, optimize=optimize, dpi=(dpi, dpi)
+                    )
+                elif extension == "bmp":
+                    img.save(file_path)
+                elif extension == "tiff":
+                    img.save(file_path, quality=quality, optimize=optimize, dpi=(dpi, dpi))
+                else:
+                    img.save(file_path, pnginfo=exif_data, optimize=optimize)
+
+                file_paths.append(file_path)
+                results.append(
+                    {"filename": file, "subfolder": subfolder, "type": self.type}
+                )
+                counter += 1
+
+            except Exception as e:
+                print(f"Error saving {file_path}: {e}")
+
+        return {"ui": {"images": results}, "result": (file_paths,)}
+
+
+NODE_CLASS_MAPPINGS = {
+    "XJSaveImageWithMetadata": XJSaveImageWithMetadata,
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "XJSaveImageWithMetadata": "Save Image With Metadata",
+}

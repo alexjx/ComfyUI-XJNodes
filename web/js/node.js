@@ -37,6 +37,237 @@ function processTextList(text) {
 
 
 
+// Image Navigator Modal Class
+class XJImageNavigator {
+    constructor(node, directory, subdirectory, images, currentImage) {
+        this.node = node;
+        this.directory = directory;
+        this.subdirectory = subdirectory;
+        this.images = images;
+        this.currentIndex = Math.max(0, images.indexOf(currentImage));
+        this.isVisible = false;
+
+        this.createModal();
+        this.bindEvents();
+        this.updateDisplay();
+    }
+
+    createModal() {
+        // Create overlay
+        this.overlay = document.createElement('div');
+        this.overlay.className = 'xj-image-navigator-overlay';
+        this.overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 10000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        `;
+
+        // Create main container (fullscreen)
+        this.container = document.createElement('div');
+        this.container.className = 'xj-image-navigator-container';
+        this.container.style.cssText = `
+            background: #1a1a1a;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        `;
+
+        // Create image display area (fullscreen, no sidebar)
+        this.imageArea = document.createElement('div');
+        this.imageArea.className = 'xj-navigator-image-area';
+        this.imageArea.style.cssText = `
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        `;
+
+        // Create main image display - maximize viewport
+        this.mainImage = document.createElement('img');
+        this.mainImage.style.cssText = `
+            max-width: 100vw;
+            max-height: 100vh;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+        `;
+
+        // Create image info overlay
+        this.imageInfo = document.createElement('div');
+        this.imageInfo.style.cssText = `
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-family: monospace;
+            backdrop-filter: blur(10px);
+            text-align: center;
+            pointer-events: none;
+        `;
+
+        // Keyboard help
+        this.keyboardHelp = document.createElement('div');
+        this.keyboardHelp.style.cssText = `
+            position: absolute;
+            top: 30px;
+            right: 30px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #aaa;
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: monospace;
+            backdrop-filter: blur(10px);
+            pointer-events: none;
+        `;
+        this.keyboardHelp.innerHTML = `
+            <div style="margin-bottom: 4px;"><strong style="color: #fff;">S</strong> Back | <strong style="color: #fff;">F</strong> Forward</div>
+            <div style="margin-bottom: 4px;"><strong style="color: #fff;">Enter</strong> Select & Exit</div>
+            <div><strong style="color: #fff;">ESC</strong> Exit</div>
+        `;
+
+        // Close button overlay
+        this.closeBtn = document.createElement('button');
+        this.closeBtn.innerHTML = '✕';
+        this.closeBtn.style.cssText = `
+            position: absolute;
+            top: 30px;
+            left: 30px;
+            background: rgba(0, 0, 0, 0.8);
+            border: none;
+            color: #fff;
+            font-size: 24px;
+            width: 44px;
+            height: 44px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(10px);
+            transition: background 0.2s;
+        `;
+        this.closeBtn.onmouseover = () => this.closeBtn.style.background = 'rgba(255, 255, 255, 0.2)';
+        this.closeBtn.onmouseout = () => this.closeBtn.style.background = 'rgba(0, 0, 0, 0.8)';
+
+        // Assemble the modal
+        this.imageArea.appendChild(this.mainImage);
+        this.imageArea.appendChild(this.imageInfo);
+        this.imageArea.appendChild(this.keyboardHelp);
+        this.imageArea.appendChild(this.closeBtn);
+
+        this.container.appendChild(this.imageArea);
+        this.overlay.appendChild(this.container);
+    }
+
+    bindEvents() {
+        // Close button
+        this.closeBtn.onclick = () => this.close();
+
+        // Keyboard events (only when modal is visible)
+        this.keyHandler = (e) => {
+            if (!this.isVisible) return;
+
+            const key = e.key.toLowerCase();
+
+            switch(key) {
+                case 's':  // Backward
+                    e.preventDefault();
+                    this.navigate(-1);
+                    break;
+                case 'f':  // Forward
+                    e.preventDefault();
+                    this.navigate(1);
+                    break;
+                case 'enter':
+                    e.preventDefault();
+                    this.close();
+                    break;
+                case 'escape':
+                    e.preventDefault();
+                    this.close();
+                    break;
+            }
+        };
+
+        document.addEventListener('keydown', this.keyHandler);
+
+        // Click outside to close
+        this.overlay.onclick = (e) => {
+            if (e.target === this.overlay) {
+                this.close();
+            }
+        };
+    }
+
+    updateDisplay() {
+        const currentImage = this.images[this.currentIndex];
+
+        if (currentImage) {
+            // Update main image
+            const previewParams = app.getPreviewFormatParam ? app.getPreviewFormatParam() : '';
+            this.mainImage.src = `/view?filename=${encodeURIComponent(currentImage)}&type=${this.directory}&subfolder=${encodeURIComponent(this.subdirectory)}${previewParams}&preview=false&channel=rgba&rand=${Math.random()}`;
+
+            // Update image info
+            this.imageInfo.textContent = `${this.currentIndex + 1} / ${this.images.length} - ${currentImage}`;
+        }
+    }
+
+    navigate(direction) {
+        const newIndex = this.currentIndex + direction;
+        if (newIndex >= 0 && newIndex < this.images.length) {
+            this.currentIndex = newIndex;
+            this.updateDisplay();
+        }
+    }
+
+    show() {
+        this.isVisible = true;
+        document.body.appendChild(this.overlay);
+
+        // Prevent body scroll
+        document.body.style.overflow = 'hidden';
+    }
+
+    close() {
+        // Always update the node with the currently viewed image when exiting
+        if (this.images[this.currentIndex]) {
+            const imageWidget = this.node.widgets.find(w => w.name === "image");
+            if (imageWidget) {
+                imageWidget.value = this.images[this.currentIndex];
+                imageWidget.callback?.call(this.node, this.images[this.currentIndex]);
+            }
+        }
+
+        this.isVisible = false;
+        if (this.overlay.parentNode) {
+            this.overlay.parentNode.removeChild(this.overlay);
+        }
+
+        // Restore body scroll
+        document.body.style.overflow = '';
+
+        // Clean up event listeners
+        document.removeEventListener('keydown', this.keyHandler);
+    }
+}
+
 app.registerExtension({
     name: "Comfy.xjnodes",
 
@@ -405,6 +636,9 @@ app.registerExtension({
             nodeType.prototype.onNodeCreated = async function () {
                 const result = originalNodeCreated?.apply(this, arguments);
 
+                // Capture node reference for use in callbacks
+                const node = this;
+
                 const directoryWidget = this.widgets.find(w => w.name === "directory");
                 const subdirectoryWidget = this.widgets.find(w => w.name === "subdirectory");
                 const imageWidget = this.widgets.find(w => w.name === "image");
@@ -421,18 +655,28 @@ app.registerExtension({
                         }
 
                         const directory = directoryWidget.value;
-                        const subdirectory = subdirectoryWidget.value || "";
+                        // Clean subdirectory: remove leading/trailing slashes
+                        let subdirectory = (subdirectoryWidget.value || "").trim();
+                        subdirectory = subdirectory.replace(/^\/+|\/+$/g, '');
+
+                        console.debug("updateImagePreview - directory:", directory, "subdirectory:", subdirectory, "filename:", filename);
 
                         // Create image preview
                         const img = new Image();
                         img.onload = () => {
+                            console.debug("Image loaded successfully");
                             app.graph.setDirtyCanvas(true, true);
+                        };
+                        img.onerror = () => {
+                            console.error("Failed to load image from preview URL");
                         };
 
                         // Build API URL for image with preview optimization
                         // Use preview parameter to get a smaller/compressed version
                         const previewParams = app.getPreviewFormatParam ? app.getPreviewFormatParam() : '';
                         img.src = `/view?filename=${encodeURIComponent(filename)}&type=${directory}&subfolder=${encodeURIComponent(subdirectory)}${previewParams}&preview=true&channel=rgba&rand=${Math.random()}`;
+
+                        console.debug("Preview URL:", img.src);
 
                         // Set node preview
                         node.imgs = [img];
@@ -442,13 +686,18 @@ app.registerExtension({
                     // Function to update image list
                     const updateImageList = async () => {
                         const directory = directoryWidget.value;
-                        const subdirectory = subdirectoryWidget.value || "";
+                        // Clean subdirectory: remove leading/trailing slashes
+                        let subdirectory = (subdirectoryWidget.value || "").trim();
+                        subdirectory = subdirectory.replace(/^\/+|\/+$/g, '');
                         const prevValue = imageWidget.value;
+
+                        console.debug("updateImageList - directory:", directory, "subdirectory:", subdirectory);
 
                         try {
                             const response = await fetch(`/xjnodes/list_images?directory=${encodeURIComponent(directory)}&subdirectory=${encodeURIComponent(subdirectory)}`);
                             if (response.ok) {
                                 const data = await response.json();
+                                console.debug("API returned:", data);
 
                                 // Update image widget options (just use the filenames directly)
                                 imageWidget.options.values = data.images.length > 0 ? data.images : [""];
@@ -467,6 +716,8 @@ app.registerExtension({
 
                                 console.debug("Updated imageWidget.options.values:", imageWidget.options.values);
                                 console.debug("Updated imageWidget.value:", imageWidget.value);
+                            } else {
+                                console.error("API request failed:", response.status, response.statusText);
                             }
                         } catch (error) {
                             console.error("Error fetching image list:", error);
@@ -496,6 +747,40 @@ app.registerExtension({
                     // Initial update
                     await dummy(); // this will cause the widgets to obtain the actual value from web page.
                     await updateImageList();
+
+                    // Add image navigator button
+                    const navigatorButton = node.addWidget("button", "🖼️ Browse Images", null, async () => {
+                        const directory = directoryWidget.value;
+                        let subdirectory = (subdirectoryWidget.value || "").trim();
+                        subdirectory = subdirectory.replace(/^\/+|\/+$/g, '');
+                        const currentImage = imageWidget.value;
+
+                        try {
+                            const response = await fetch(`/xjnodes/list_images?directory=${encodeURIComponent(directory)}&subdirectory=${encodeURIComponent(subdirectory)}`);
+                            if (response.ok) {
+                                const data = await response.json();
+                                if (data.images && data.images.length > 0) {
+                                    const navigator = new XJImageNavigator(
+                                        node,
+                                        directory,
+                                        subdirectory,
+                                        data.images,
+                                        currentImage
+                                    );
+                                    navigator.show();
+                                } else {
+                                    alert("No images found in this directory.");
+                                }
+                            } else {
+                                console.error("Failed to load image list for navigator");
+                            }
+                        } catch (error) {
+                            console.error("Error opening image navigator:", error);
+                        }
+                    });
+
+                    // Style the navigator button
+                    navigatorButton.options.y = 8;
 
                     // Save the updateImageList method for refreshing later
                     if (!registeredNodes[nodeData.name]) {

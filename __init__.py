@@ -67,6 +67,9 @@ async def list_images(request):
         else:
             return web.json_response({"error": "Invalid directory type"}, status=400)
 
+        # Clean subdirectory: remove leading/trailing slashes
+        subdirectory = subdirectory.strip().strip('/')
+
         # Construct full directory path
         if subdirectory:
             full_dir = os.path.join(base_dir, subdirectory)
