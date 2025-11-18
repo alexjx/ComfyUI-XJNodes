@@ -103,24 +103,6 @@ class XJImageNavigator {
             object-fit: contain;
         `;
 
-        // Create image info overlay
-        this.imageInfo = document.createElement('div');
-        this.imageInfo.style.cssText = `
-            position: absolute;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.8);
-            color: #fff;
-            padding: 12px 24px;
-            border-radius: 6px;
-            font-size: 16px;
-            font-family: monospace;
-            backdrop-filter: blur(10px);
-            text-align: center;
-            pointer-events: none;
-        `;
-
         // Keyboard help
         this.keyboardHelp = document.createElement('div');
         this.keyboardHelp.style.cssText = `
@@ -135,11 +117,32 @@ class XJImageNavigator {
             font-family: monospace;
             backdrop-filter: blur(10px);
             pointer-events: none;
+            opacity: 0.5;
         `;
         this.keyboardHelp.innerHTML = `
             <div style="margin-bottom: 4px;"><strong style="color: #fff;">A</strong> Back | <strong style="color: #fff;">D</strong> Forward</div>
             <div style="margin-bottom: 4px;"><strong style="color: #fff;">Enter / Click</strong> Select & Exit</div>
             <div><strong style="color: #fff;">ESC</strong> Exit</div>
+        `;
+
+        // Create image info overlay (below keyboard help)
+        this.imageInfo = document.createElement('div');
+        this.imageInfo.style.cssText = `
+            position: absolute;
+            top: 140px;
+            right: 30px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: monospace;
+            backdrop-filter: blur(10px);
+            text-align: left;
+            pointer-events: none;
+            max-width: 300px;
+            word-wrap: break-word;
+            opacity: 0.5;
         `;
 
         // Close button overlay
