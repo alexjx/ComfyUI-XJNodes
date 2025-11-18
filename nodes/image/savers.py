@@ -64,9 +64,15 @@ class XJSaveImageWithMetadata:
                 "images": ("IMAGE",),
                 "output_path": ("STRING", {"default": "", "multiline": False}),
                 "filename_prefix": ("STRING", {"default": "ComfyUI"}),
+                "number_padding": (
+                    "INT",
+                    {"default": 5, "min": 1, "max": 10, "step": 1},
+                ),
+                "filename_delimiter": ("STRING", {"default": "_"}),
                 "extension": (["png", "jpg", "jpeg", "webp", "bmp", "tiff"],),
                 "quality": ("INT", {"default": 95, "min": 1, "max": 100, "step": 1}),
                 "dpi": ("INT", {"default": 300, "min": 72, "max": 2400, "step": 1}),
+                "overwrite_existing": ("BOOLEAN", {"default": False}),
             },
             "optional": {
                 "optimize": ("BOOLEAN", {"default": True}),
@@ -96,6 +102,9 @@ class XJSaveImageWithMetadata:
         lossless_webp=False,
         embed_workflow=True,
         metadata="",
+        number_padding=5,
+        filename_delimiter="_",
+        overwrite_existing=False,
         prompt=None,
         extra_pnginfo=None,
     ):
@@ -164,10 +173,24 @@ class XJSaveImageWithMetadata:
 
                 exif_data = pnginfo
 
-            # Generate filename
+            # Generate filename with custom delimiter and padding
             filename_with_batch_num = filename.replace("%batch_num%", str(batch_number))
-            file = f"{filename_with_batch_num}_{counter:05}.{extension}"
+
+            # Format counter with custom padding
+            counter_str = str(counter).zfill(number_padding)
+
+            # Build filename with custom delimiter
+            file = f"{filename_with_batch_num}{filename_delimiter}{counter_str}.{extension}"
             file_path = os.path.join(full_output_folder, file)
+
+            # Anti-overwrite: if file exists and overwrite is disabled, find next available number
+            if not overwrite_existing:
+                original_counter = counter
+                while os.path.exists(file_path):
+                    counter += 1
+                    counter_str = str(counter).zfill(number_padding)
+                    file = f"{filename_with_batch_num}{filename_delimiter}{counter_str}.{extension}"
+                    file_path = os.path.join(full_output_folder, file)
 
             # Save image based on format
             try:
