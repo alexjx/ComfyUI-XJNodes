@@ -62,7 +62,7 @@ class LoadImagesFromDirBatch:
         has_non_empty_mask = False
 
         for image_path in image_files:
-            if os.path.isdir(image_path) and os.path.ex:
+            if not os.path.exists(image_path) or os.path.isdir(image_path):
                 continue
             if limit_images and image_count >= image_load_cap:
                 break
@@ -241,7 +241,7 @@ class LoadImagesFromDirList:
         image_count = 0
 
         for image_path in image_files:
-            if os.path.isdir(image_path) and os.path.ex:
+            if not os.path.exists(image_path) or os.path.isdir(image_path):
                 continue
             if limit_images and image_count >= image_load_cap:
                 break
