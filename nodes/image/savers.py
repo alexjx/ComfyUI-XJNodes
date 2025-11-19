@@ -75,7 +75,7 @@ class XJSaveImageWithMetadata:
                 "overwrite_existing": ("BOOLEAN", {"default": False}),
             },
             "optional": {
-                "optimize": ("BOOLEAN", {"default": True}),
+                "optimize": ("BOOLEAN", {"default": False}),
                 "lossless_webp": ("BOOLEAN", {"default": False}),
                 "embed_workflow": ("BOOLEAN", {"default": True}),
                 "metadata": ("STRING", {"default": "", "multiline": True}),
@@ -98,7 +98,7 @@ class XJSaveImageWithMetadata:
         extension="png",
         quality=95,
         dpi=300,
-        optimize=True,
+        optimize=False,
         lossless_webp=False,
         embed_workflow=True,
         metadata="",
