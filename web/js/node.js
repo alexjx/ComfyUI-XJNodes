@@ -887,6 +887,16 @@ app.registerExtension({
                     // Style the navigator button
                     navigatorButton.options.y = 8;
 
+                    // Set initial node size to include space for preview image
+                    // Default ComfyUI node width is around 210-320, we'll use a comfortable default
+                    // Height should accommodate: title bar (~30px) + widgets (~75px for 3 widgets + button) + preview area (~200px) + margins
+                    const defaultWidth = 320;
+                    const defaultHeight = 340; // Enough space for widgets + preview
+
+                    if (!node.size || node.size[0] < defaultWidth || node.size[1] < defaultHeight) {
+                        node.size = [defaultWidth, defaultHeight];
+                    }
+
                     // Save the updateImageList method for refreshing later
                     if (!registeredNodes[nodeData.name]) {
                         registeredNodes[nodeData.name] = [];
