@@ -106,6 +106,55 @@ async def list_images(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
+@server.PromptServer.instance.routes.get("/xjnodes/list_subdirectories")
+async def list_subdirectories(request):
+    """List subdirectories based on current path for incremental path building"""
+    directory = request.rel_url.query.get("directory", "input")
+    current_path = request.rel_url.query.get("current_path", "")
+
+    try:
+        # Get base directory
+        if directory == "input":
+            base_dir = folder_paths.get_input_directory()
+        elif directory == "output":
+            base_dir = folder_paths.get_output_directory()
+        else:
+            return web.json_response({"error": "Invalid directory type"}, status=400)
+
+        # Clean current_path: remove leading/trailing slashes
+        current_path = current_path.strip().strip('/')
+
+        # Construct full directory path to search
+        if current_path:
+            search_dir = os.path.join(base_dir, current_path)
+        else:
+            search_dir = base_dir
+
+        # Security check: ensure the path is within base directory
+        if not os.path.abspath(search_dir).startswith(os.path.abspath(base_dir)):
+            return web.json_response({"error": "Invalid path"}, status=400)
+
+        # List subdirectories
+        subdirs = []
+
+        if os.path.exists(search_dir) and os.path.isdir(search_dir):
+            for item in os.listdir(search_dir):
+                item_path = os.path.join(search_dir, item)
+                if os.path.isdir(item_path):
+                    subdirs.append(item)
+
+        subdirs.sort()
+
+        return web.json_response({
+            "subdirectories": subdirs,
+            "directory": directory,
+            "current_path": current_path
+        })
+
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
 __all__ = [
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",

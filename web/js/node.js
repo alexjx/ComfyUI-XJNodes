@@ -649,6 +649,212 @@ app.registerExtension({
                 const imageWidget = this.widgets.find(w => w.name === "image");
 
                 if (directoryWidget && subdirectoryWidget && imageWidget) {
+                    // Subdirectory dropdown helper - works like Windows file dialog
+                    let subdirDropdown = null;
+
+                    // Function to close dropdown
+                    const closeDropdown = () => {
+                        if (subdirDropdown && subdirDropdown.parentNode) {
+                            subdirDropdown.parentNode.removeChild(subdirDropdown);
+                            subdirDropdown = null;
+                        }
+                    };
+
+                    // Function to create and show dropdown with subdirectories
+                    const showSubdirectoryDropdown = async (currentPath, clickEvent) => {
+                        console.log("showSubdirectoryDropdown called with path:", currentPath);
+                        console.log("Click event received:", clickEvent);
+                        const directory = directoryWidget.value;
+
+                        // Clean current path: remove leading/trailing slashes
+                        currentPath = (currentPath || "").trim().replace(/^\/+|\/+$/g, '');
+
+                        console.log("Fetching subdirectories for directory:", directory, "path:", currentPath);
+
+                        try {
+                            const response = await fetch(`/xjnodes/list_subdirectories?directory=${encodeURIComponent(directory)}&current_path=${encodeURIComponent(currentPath)}`);
+                            console.log("API response status:", response.status);
+
+                            if (!response.ok) {
+                                console.error("Failed to fetch subdirectories, status:", response.status);
+                                return;
+                            }
+
+                            const data = await response.json();
+                            console.log("API returned data:", data);
+                            const subdirs = data.subdirectories || [];
+
+                            // Close existing dropdown
+                            closeDropdown();
+
+                            // Only skip showing dropdown if no subdirs AND at root (can't go up)
+                            if (subdirs.length === 0 && !currentPath) {
+                                console.log("No subdirectories found and at root - nothing to show");
+                                return;
+                            }
+
+                            console.log("Creating dropdown with", subdirs.length, "subdirectories");
+
+                            // Create dropdown
+                            subdirDropdown = document.createElement('div');
+                            subdirDropdown.className = 'xj-subdirectory-dropdown';
+                            subdirDropdown.style.cssText = `
+                                position: fixed;
+                                background: #2a2a2a;
+                                border: 1px solid #555;
+                                border-radius: 4px;
+                                max-height: 300px;
+                                overflow-y: auto;
+                                z-index: 99999;
+                                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+                                min-width: 300px;
+                                left: 100px;
+                                top: 100px;
+                            `;
+                            console.log("Created dropdown element:", subdirDropdown);
+
+                            // Add ".." parent directory option if not at root
+                            if (currentPath) {
+                                const parentOption = document.createElement('div');
+                                parentOption.textContent = '.. (Parent Directory)';
+                                parentOption.style.cssText = `
+                                    padding: 8px 12px;
+                                    cursor: pointer;
+                                    color: #ffa500;
+                                    border-bottom: 1px solid #555;
+                                    font-weight: bold;
+                                `;
+
+                                parentOption.onmouseover = () => {
+                                    parentOption.style.background = '#3a3a3a';
+                                };
+                                parentOption.onmouseout = () => {
+                                    parentOption.style.background = 'transparent';
+                                };
+
+                                parentOption.onclick = async (e) => {
+                                    e.stopPropagation();
+
+                                    // Go to parent directory
+                                    const pathParts = currentPath.split('/').filter(p => p);
+                                    pathParts.pop(); // Remove last part
+                                    const parentPath = pathParts.join('/');
+
+                                    // Update widget value
+                                    subdirectoryWidget.value = parentPath;
+
+                                    // Update image list
+                                    updateImageList();
+
+                                    // Force canvas redraw
+                                    app.graph.setDirtyCanvas(true, true);
+
+                                    // Refresh dropdown with new location (keep it open)
+                                    await showSubdirectoryDropdown(parentPath, clickEvent);
+                                };
+
+                                subdirDropdown.appendChild(parentOption);
+                            }
+
+                            // Add subdirectory options
+                            subdirs.forEach((subdir) => {
+                                const option = document.createElement('div');
+                                option.textContent = subdir;
+                                option.style.cssText = `
+                                    padding: 8px 12px;
+                                    cursor: pointer;
+                                    color: #fff;
+                                    border-bottom: 1px solid #333;
+                                `;
+
+                                option.onmouseover = () => {
+                                    option.style.background = '#3a3a3a';
+                                };
+                                option.onmouseout = () => {
+                                    option.style.background = 'transparent';
+                                };
+
+                                option.onclick = async (e) => {
+                                    e.stopPropagation();
+
+                                    // Build new path
+                                    let newPath;
+                                    if (currentPath) {
+                                        newPath = currentPath + '/' + subdir;
+                                    } else {
+                                        newPath = subdir;
+                                    }
+
+                                    // Update widget value
+                                    subdirectoryWidget.value = newPath;
+
+                                    // Update image list (trigger the original subdirectory callback)
+                                    updateImageList();
+
+                                    // Force canvas redraw
+                                    app.graph.setDirtyCanvas(true, true);
+
+                                    // Refresh dropdown with new location (keep it open)
+                                    await showSubdirectoryDropdown(newPath, clickEvent);
+                                };
+
+                                subdirDropdown.appendChild(option);
+                            });
+
+                            // Append to DOM
+                            document.body.appendChild(subdirDropdown);
+
+                            // Position dropdown below/right of the button click
+                            let x, y;
+
+                            if (clickEvent && clickEvent.clientX && clickEvent.clientY) {
+                                // Position relative to click location (bottom-right)
+                                x = clickEvent.clientX;
+                                y = clickEvent.clientY + 10; // 10px below click
+                                console.log("Positioning relative to click at:", clickEvent.clientX, clickEvent.clientY);
+                            } else {
+                                // Fallback: center-left of screen
+                                const viewportWidth = window.innerWidth;
+                                const viewportHeight = window.innerHeight;
+                                x = Math.max(20, (viewportWidth - 300) / 4);
+                                y = Math.max(100, viewportHeight / 4);
+                                console.log("Using fallback positioning");
+                            }
+
+                            // Make sure dropdown stays within viewport
+                            const dropdownWidth = 300;
+                            const dropdownHeight = 300;
+                            const viewportWidth = window.innerWidth;
+                            const viewportHeight = window.innerHeight;
+
+                            // Adjust if too far right
+                            if (x + dropdownWidth > viewportWidth - 20) {
+                                x = viewportWidth - dropdownWidth - 20;
+                            }
+
+                            // Adjust if too far down
+                            if (y + dropdownHeight > viewportHeight - 20) {
+                                y = Math.max(20, viewportHeight - dropdownHeight - 20);
+                            }
+
+                            subdirDropdown.style.left = x + 'px';
+                            subdirDropdown.style.top = y + 'px';
+
+                            console.log("Dropdown positioned at:", x, y);
+
+                        } catch (error) {
+                            console.error("Error fetching subdirectories:", error);
+                        }
+                    };
+
+                    // Close dropdown when clicking outside
+                    const globalClickHandler = (e) => {
+                        if (subdirDropdown && !subdirDropdown.contains(e.target)) {
+                            closeDropdown();
+                        }
+                    };
+                    document.addEventListener('click', globalClickHandler);
+
                     // Store preview image in custom property (not node.imgs to avoid ImagePreviewWidget)
                     node.previewImage = null;
 
@@ -852,6 +1058,25 @@ app.registerExtension({
                     // Initial update
                     await dummy(); // this will cause the widgets to obtain the actual value from web page.
                     await updateImageList();
+
+                    // Add Browse Subdirs button right after subdirectory widget (before image widget)
+                    const subdirIndex = node.widgets.findIndex(w => w.name === "subdirectory");
+                    const browseSubdirsButton = node.addWidget("button", "📁 Browse Subdirs", null, (value, widget, node, pos, event) => {
+                        console.log("Browse Subdirs button clicked!");
+                        console.log("Current subdirectory value:", subdirectoryWidget.value);
+                        console.log("Click event:", event);
+
+                        // Pass click event to help with positioning
+                        showSubdirectoryDropdown(subdirectoryWidget.value, event);
+                    });
+
+                    // Move the button to right after subdirectory widget
+                    if (subdirIndex !== -1) {
+                        // Remove button from end
+                        const buttonWidget = node.widgets.pop();
+                        // Insert it after subdirectory (at subdirIndex + 1)
+                        node.widgets.splice(subdirIndex + 1, 0, buttonWidget);
+                    }
 
                     // Add image navigator button
                     const navigatorButton = node.addWidget("button", "🖼️ Browse Images", null, async () => {
