@@ -637,6 +637,7 @@ app.registerExtension({
         // Handle XJLoadImageWithMetadata node
         if (nodeData.name === "XJLoadImageWithMetadata") {
             const originalNodeCreated = nodeType.prototype.onNodeCreated;
+            const originalOnConfigure = nodeType.prototype.onConfigure;
 
             nodeType.prototype.onNodeCreated = async function () {
                 const result = originalNodeCreated?.apply(this, arguments);
@@ -649,6 +650,29 @@ app.registerExtension({
                 const imageWidget = this.widgets.find(w => w.name === "image");
 
                 if (directoryWidget && subdirectoryWidget && imageWidget) {
+                    // CRITICAL FIX: If we have a saved image value in widgets_values, add it to the combo options
+                    // This must happen BEFORE dummy() is called, otherwise the value gets rejected
+                    if (this.widgets_values && this.widgets_values[2]) {
+                        const savedImageValue = this.widgets_values[2];
+                        console.log("Found saved image value in widgets_values:", savedImageValue);
+
+                        // Add the saved value to the combo options so it won't be rejected
+                        if (!imageWidget.options.values.includes(savedImageValue)) {
+                            imageWidget.options.values.push(savedImageValue);
+                            console.log("Added saved image to options.values");
+                        }
+
+                        // Set the value directly
+                        imageWidget.value = savedImageValue;
+                        console.log("Set imageWidget.value to:", savedImageValue);
+                    }
+
+                    // Ensure the image widget properly serializes its value to the workflow
+                    // This is critical for the widget value to persist across workflow saves/loads
+                    imageWidget.serializeValue = function() {
+                        return this.value;
+                    };
+
                     // Subdirectory dropdown helper - works like Windows file dialog
                     let subdirDropdown = null;
 
@@ -975,29 +999,38 @@ app.registerExtension({
                     };
 
                     // Function to update image list
-                    const updateImageList = async () => {
+                    const updateImageList = async (preserveCurrentValue = false) => {
                         const directory = directoryWidget.value;
                         // Clean subdirectory: remove leading/trailing slashes
                         let subdirectory = (subdirectoryWidget.value || "").trim();
                         subdirectory = subdirectory.replace(/^\/+|\/+$/g, '');
                         const prevValue = imageWidget.value;
 
-                        console.debug("updateImageList - directory:", directory, "subdirectory:", subdirectory);
-
                         try {
                             const response = await fetch(`/xjnodes/list_images?directory=${encodeURIComponent(directory)}&subdirectory=${encodeURIComponent(subdirectory)}`);
                             if (response.ok) {
                                 const data = await response.json();
-                                console.debug("API returned:", data);
 
                                 // Update image widget options
                                 if (data.images.length > 0) {
                                     imageWidget.options.values = data.images;
-                                    // Preserve previous value if it still exists in the list
-                                    if (data.images.includes(prevValue)) {
-                                        imageWidget.value = prevValue;
+
+                                    // Determine which image to select
+                                    if (preserveCurrentValue) {
+                                        // When preserving, check if current value exists in list
+                                        if (prevValue && data.images.includes(prevValue)) {
+                                            imageWidget.value = prevValue;
+                                        } else {
+                                            // Current image not in list, reset to first
+                                            imageWidget.value = data.images[0];
+                                        }
                                     } else {
-                                        imageWidget.value = data.images[0];
+                                        // Normal behavior: try to keep previous value, otherwise use first
+                                        if (prevValue && data.images.includes(prevValue)) {
+                                            imageWidget.value = prevValue;
+                                        } else {
+                                            imageWidget.value = data.images[0];
+                                        }
                                     }
                                     // Update image preview with valid image
                                     updateImagePreview(imageWidget.value);
@@ -1012,9 +1045,6 @@ app.registerExtension({
 
                                 // Force node to update its display
                                 node.setDirtyCanvas(true, true);
-
-                                console.debug("Updated imageWidget.options.values:", imageWidget.options.values);
-                                console.debug("Updated imageWidget.value:", imageWidget.value);
                             } else {
                                 console.error("API request failed:", response.status, response.statusText);
                             }
@@ -1022,6 +1052,25 @@ app.registerExtension({
                             console.error("Error fetching image list:", error);
                         }
                     };
+
+                    // Dummy function to get actual values from web page
+                    const dummy = async () => {
+                        // calling async method will update the widgets with actual value from the browser and not the default from Node definition.
+                    };
+
+                    // Initial update - do this BEFORE setting up callbacks to avoid triggering them during load
+                    await dummy(); // this will cause the widgets to obtain the actual value from web page.
+
+                    // If we have a saved value from onConfigure, restore it before calling updateImageList
+                    if (node._savedImageValue) {
+                        imageWidget.value = node._savedImageValue;
+                    }
+
+                    // Call updateImageList with preserveCurrentValue=true to maintain the loaded value
+                    await updateImageList(true);
+
+                    // NOW hook into callbacks AFTER initial load is complete
+                    // This prevents callbacks from firing during workflow deserialization
 
                     // Hook into directory widget change - preserve original callback
                     const originalDirectoryCallback = directoryWidget.callback;
@@ -1050,25 +1099,15 @@ app.registerExtension({
                         updateImagePreview(value);
                     };
 
-                    // Dummy function to get actual values from web page
-                    const dummy = async () => {
-                        // calling async method will update the widgets with actual value from the browser and not the default from Node definition.
-                    };
-
-                    // Initial update
-                    await dummy(); // this will cause the widgets to obtain the actual value from web page.
-                    await updateImageList();
-
                     // Add Browse Subdirs button right after subdirectory widget (before image widget)
                     const subdirIndex = node.widgets.findIndex(w => w.name === "subdirectory");
                     const browseSubdirsButton = node.addWidget("button", "📁 Browse Subdirs", null, (value, widget, node, pos, event) => {
-                        console.log("Browse Subdirs button clicked!");
-                        console.log("Current subdirectory value:", subdirectoryWidget.value);
-                        console.log("Click event:", event);
-
                         // Pass click event to help with positioning
                         showSubdirectoryDropdown(subdirectoryWidget.value, event);
                     });
+
+                    // Make button not serialize (buttons shouldn't be saved to workflow)
+                    browseSubdirsButton.serialize = false;
 
                     // Move the button to right after subdirectory widget
                     if (subdirIndex !== -1) {
@@ -1109,6 +1148,12 @@ app.registerExtension({
                         }
                     });
 
+                    // Make button not serialize (buttons shouldn't be saved to workflow)
+                    navigatorButton.serialize = false;
+
+                    // No need to override serialize - let ComfyUI save the sparse array
+                    // We'll handle it correctly on the loading side in onConfigure
+
                     // Style the navigator button
                     navigatorButton.options.y = 8;
 
@@ -1132,10 +1177,60 @@ app.registerExtension({
                 return result;
             };
 
+            // onConfigure is called when a node is loaded from a workflow
+            // This is where we can access the saved widgets_values
+            nodeType.prototype.onConfigure = function(info) {
+                // Call original onConfigure if it exists
+                if (originalOnConfigure) {
+                    originalOnConfigure.apply(this, arguments);
+                }
+
+                // WORKAROUND: ComfyUI creates sparse arrays when widgets have serialize: false
+                // At save time widget order is: [directory, subdirectory, browseSubdirsButton, image, browseImagesButton]
+                // Sparse array is saved as: ['input', '', null, 'image.png', null]
+                //
+                // BUT: onConfigure is called BEFORE onNodeCreated adds the buttons!
+                // So at this point widgets are: [directory, subdirectory, image]
+                // We need to map from the current index to the saved index
+
+                const imageWidget = this.widgets.find(w => w.name === "image");
+                if (imageWidget && info?.widgets_values) {
+                    // At this point (onConfigure), the widget order is the original from Python
+                    // Original order: [directory, subdirectory, image]
+                    // But the saved widgets_values was created with buttons inserted
+                    // Saved order was: [directory, subdirectory, browseSubdirsButton, image, browseImagesButton]
+
+                    // The saved image value is at index 3 (after directory, subdirectory, button)
+                    // We look for the first non-null value after index 2 (after directory and subdirectory)
+                    let savedImageValue = null;
+
+                    // Skip past directory (0) and subdirectory (1), then find next non-null value
+                    for (let i = 2; i < info.widgets_values.length; i++) {
+                        if (info.widgets_values[i] !== null && info.widgets_values[i] !== undefined) {
+                            savedImageValue = info.widgets_values[i];
+                            break;
+                        }
+                    }
+
+                    if (savedImageValue) {
+                        // Store this on the node so onNodeCreated can use it
+                        this._savedImageValue = savedImageValue;
+
+                        // Add to options if not already there
+                        if (!imageWidget.options.values.includes(savedImageValue)) {
+                            imageWidget.options.values.push(savedImageValue);
+                        }
+
+                        // Set the value
+                        imageWidget.value = savedImageValue;
+                    }
+                }
+            };
+
             // Refresh existing nodes when node is re-registered (on refresh)
             if (registeredNodes[nodeData.name]) {
                 for (const updateImageList of registeredNodes[nodeData.name]) {
-                    await updateImageList();
+                    await updateImageList(true); // Preserve current values on refresh
                 }
             }
         }
