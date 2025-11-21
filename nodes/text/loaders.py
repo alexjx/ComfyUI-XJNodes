@@ -1,9 +1,13 @@
 import os
 import random
 import folder_paths
+from collections import deque
 
 
 class XJRandomTextFromList:
+    # Class-level memory to track recently selected items
+    _selection_memory = deque(maxlen=100)  # Global memory limit
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -55,13 +59,37 @@ class XJRandomTextFromList:
         else:
             # Set the random seed for reproducibility
             random.seed(seed)
-            # Randomly select one string from the list
-            selected_text = random.choice(text_list)
+
+            # Calculate memory size (less than half of list size)
+            memory_size = max(1, len(text_list) // 2 - 1)
+
+            # Try to select an index not in recent memory
+            max_retries = min(len(text_list), 50)  # Limit retries
+            selected_index = None
+
+            for _ in range(max_retries):
+                candidate_index = random.randint(0, len(text_list) - 1)
+                # Check if candidate index is in recent memory
+                if candidate_index not in list(self._selection_memory)[-memory_size:]:
+                    selected_index = candidate_index
+                    break
+
+            # If all retries failed (unlikely), just use a random index
+            if selected_index is None:
+                selected_index = random.randint(0, len(text_list) - 1)
+
+            # Add selected index to memory
+            self._selection_memory.append(selected_index)
+
+            selected_text = text_list[selected_index]
 
         return (selected_text,)
 
 
 class XJRandomTextFromFile:
+    # Class-level memory to track recently selected items
+    _selection_memory = deque(maxlen=100)  # Global memory limit
+
     @classmethod
     def INPUT_TYPES(s):
         # Enumerate .txt and .md files from input directory
@@ -128,8 +156,29 @@ class XJRandomTextFromFile:
         else:
             # Set the random seed for reproducibility
             random.seed(seed)
-            # Randomly select one string from the list
-            selected_text = random.choice(text_list)
+
+            # Calculate memory size (less than half of list size)
+            memory_size = max(1, len(text_list) // 2 - 1)
+
+            # Try to select an index not in recent memory
+            max_retries = min(len(text_list), 50)  # Limit retries
+            selected_index = None
+
+            for _ in range(max_retries):
+                candidate_index = random.randint(0, len(text_list) - 1)
+                # Check if candidate index is in recent memory
+                if candidate_index not in list(self._selection_memory)[-memory_size:]:
+                    selected_index = candidate_index
+                    break
+
+            # If all retries failed (unlikely), just use a random index
+            if selected_index is None:
+                selected_index = random.randint(0, len(text_list) - 1)
+
+            # Add selected index to memory
+            self._selection_memory.append(selected_index)
+
+            selected_text = text_list[selected_index]
 
         return (selected_text,)
 
