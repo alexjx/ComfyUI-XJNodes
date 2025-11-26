@@ -8,12 +8,46 @@ class XJRandomTextFromList:
     # Class-level memory to track recently selected items
     _selection_memory = deque(maxlen=100)  # Global memory limit
 
+    @staticmethod
+    def parse_index_list(index_string):
+        """
+        Parse a comma-separated string with range support.
+        Examples:
+            "3, 5, 7-10" -> [3, 5, 7, 8, 9, 10]
+            "1, 3, 5-8, 10" -> [1, 3, 5, 6, 7, 8, 10]
+            "10-7" -> [10, 9, 8, 7] (reverse range)
+
+        Returns:
+            List of integers (1-indexed as displayed to users)
+        """
+        indices = []
+        parts = index_string.split(',')
+
+        for part in parts:
+            part = part.strip()
+            if '-' in part:
+                # Handle range
+                range_parts = part.split('-')
+                if len(range_parts) == 2:
+                    start = int(range_parts[0].strip())
+                    end = int(range_parts[1].strip())
+                    if start <= end:
+                        indices.extend(range(start, end + 1))
+                    else:
+                        # Reverse range
+                        indices.extend(range(start, end - 1, -1))
+            else:
+                # Single number
+                indices.append(int(part))
+
+        return indices
+
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
                 "multiline_text": ("XJ_NUMBERED_LIST", {}),
-                "type": (("fixed", "random"),),
+                "type": (("fixed", "random", "list"),),
                 "choice": (
                     "INT",
                     {
@@ -31,6 +65,9 @@ class XJRandomTextFromList:
                         "step": 1,
                     },
                 ),
+            },
+            "optional": {
+                "index_list": ("STRING", {"default": "1, 2, 3"}),
             }
         }
 
@@ -40,7 +77,7 @@ class XJRandomTextFromList:
     FUNCTION = "make_list"
     CATEGORY = "XJNode/text"
 
-    def make_list(self, multiline_text, type, choice, seed):
+    def make_list(self, multiline_text, type, choice, seed, index_list="1, 2, 3"):
         # Split the multiline text into a list of strings
         text_list = multiline_text.splitlines()
         # Remove empty lines
@@ -56,7 +93,45 @@ class XJRandomTextFromList:
             if choice >= len(text_list) + 1:
                 raise Exception(f"Choice {choice} exceeded max length {len(text_list)}")
             selected_text = text_list[choice - 1]
-        else:
+        elif type == "list":
+            # Parse the index list
+            try:
+                valid_indices = self.parse_index_list(index_list)
+            except (ValueError, IndexError) as e:
+                raise Exception(f"Invalid index_list format: {index_list}. Error: {e}")
+
+            # Filter to only valid indices (within bounds)
+            valid_indices = [i for i in valid_indices if 1 <= i <= len(text_list)]
+
+            if not valid_indices:
+                raise Exception(f"No valid indices in range for list with {len(text_list)} items")
+
+            # Set the random seed
+            random.seed(seed)
+
+            # Convert to 0-indexed for accessing text_list
+            available_indices = [i - 1 for i in valid_indices]
+
+            # Apply anti-repetition logic (same as random mode)
+            memory_size = max(1, len(available_indices) // 2 - 1)
+            max_retries = min(len(available_indices), 50)
+            selected_index = None
+
+            for _ in range(max_retries):
+                candidate_index = random.choice(available_indices)
+                if candidate_index not in list(self._selection_memory)[-memory_size:]:
+                    selected_index = candidate_index
+                    break
+
+            # If all retries failed (unlikely), just use a random selection
+            if selected_index is None:
+                selected_index = random.choice(available_indices)
+
+            # Add selected index to memory
+            self._selection_memory.append(selected_index)
+
+            selected_text = text_list[selected_index]
+        else:  # random
             # Set the random seed for reproducibility
             random.seed(seed)
 
