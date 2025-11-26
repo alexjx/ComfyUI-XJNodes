@@ -125,6 +125,9 @@ class XJRandomTextFromFile:
                         "step": 1,
                     },
                 ),
+            },
+            "optional": {
+                "file_path_override": ("STRING", {"forceInput": True}),
             }
         }
 
@@ -134,7 +137,11 @@ class XJRandomTextFromFile:
     FUNCTION = "make_list"
     CATEGORY = "XJNode/text"
 
-    def make_list(self, file_path, type, choice, seed):
+    def make_list(self, file_path, type, choice, seed, file_path_override=None):
+        # Use override if provided (from Text File Info node)
+        if file_path_override is not None and file_path_override.strip():
+            file_path = file_path_override
+
         input_dir = folder_paths.get_input_directory()
         file_path = os.path.join(input_dir, file_path)
         with open(file_path, "r", encoding="utf-8") as f:
