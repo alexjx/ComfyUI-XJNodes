@@ -1,5 +1,6 @@
 import os
 import random
+import string
 import folder_paths
 from collections import deque
 
@@ -313,14 +314,70 @@ class XJTextListFromFile:
         return (text_list,)
 
 
+class XJRandomText:
+    """Generate random text from specified characters"""
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "chars": (
+                    "STRING",
+                    {
+                        "default": string.printable.strip(),
+                        "multiline": False,
+                    },
+                ),
+                "length": (
+                    "INT",
+                    {
+                        "default": 10,
+                        "min": 1,
+                        "max": 10000,
+                        "step": 1,
+                    },
+                ),
+                "seed": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": 0xFFFFFFFFFFFFFFFF,
+                        "step": 1,
+                    },
+                ),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("text",)
+    FUNCTION = "generate"
+    CATEGORY = "XJNode/text"
+
+    def generate(self, chars, length, seed):
+        # Validate chars input
+        if not chars:
+            raise Exception("chars parameter cannot be empty")
+
+        # Set the random seed for reproducibility
+        random.seed(seed)
+
+        # Generate random text from the specified characters
+        random_text = ''.join(random.choice(chars) for _ in range(length))
+
+        return (random_text,)
+
+
 NODE_CLASS_MAPPINGS = {
     "XJRandomTextFromList": XJRandomTextFromList,
     "XJRandomTextFromFile": XJRandomTextFromFile,
     "XJTextListFromFile": XJTextListFromFile,
+    "XJRandomText": XJRandomText,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "XJRandomTextFromList": "Random Text From List",
     "XJRandomTextFromFile": "Random Text From File",
     "XJTextListFromFile": "Text List From File",
+    "XJRandomText": "Random Text",
 }
