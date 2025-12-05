@@ -69,7 +69,7 @@ class XJImageNavigator {
             align-items: center;
         `;
 
-        // Create main container (fullscreen)
+        // Create main container (fullscreen with flex layout)
         this.container = document.createElement('div');
         this.container.className = 'xj-image-navigator-container';
         this.container.style.cssText = `
@@ -77,15 +77,15 @@ class XJImageNavigator {
             width: 100%;
             height: 100%;
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
             overflow: hidden;
         `;
 
-        // Create image display area (fullscreen, no sidebar)
+        // Create image display area (left side - 80%)
         this.imageArea = document.createElement('div');
         this.imageArea.className = 'xj-navigator-image-area';
         this.imageArea.style.cssText = `
-            width: 100%;
+            width: 80%;
             height: 100%;
             display: flex;
             align-items: center;
@@ -93,11 +93,11 @@ class XJImageNavigator {
             position: relative;
         `;
 
-        // Create main image display - maximize viewport
+        // Create main image display
         this.mainImage = document.createElement('img');
         this.mainImage.style.cssText = `
-            max-width: 100vw;
-            max-height: 100vh;
+            max-width: 100%;
+            max-height: 100%;
             width: auto;
             height: auto;
             object-fit: contain;
@@ -169,6 +169,53 @@ class XJImageNavigator {
         this.closeBtn.onmouseover = () => this.closeBtn.style.background = 'rgba(255, 255, 255, 0.2)';
         this.closeBtn.onmouseout = () => this.closeBtn.style.background = 'rgba(0, 0, 0, 0.8)';
 
+        // Create metadata panel (right side - 20%)
+        this.metadataPanel = document.createElement('div');
+        this.metadataPanel.className = 'xj-navigator-metadata-panel';
+        this.metadataPanel.style.cssText = `
+            width: 20%;
+            height: 100vh;
+            background: #1e1e1e;
+            border-left: 1px solid #333;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 0;
+            color: #ddd;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 13px;
+        `;
+
+        // Metadata panel header (sticky)
+        const metadataHeader = document.createElement('div');
+        metadataHeader.style.cssText = `
+            padding: 20px;
+            position: sticky;
+            top: 0;
+            background: #1e1e1e;
+            border-bottom: 1px solid #333;
+            z-index: 1;
+        `;
+        metadataHeader.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; color: #fff; font-size: 16px;">📊 Generation Info</h3>
+            </div>
+        `;
+
+        // Metadata content area
+        this.metadataContent = document.createElement('div');
+        this.metadataContent.id = 'metadata-content';
+        this.metadataContent.style.cssText = `
+            padding: 20px;
+        `;
+        this.metadataContent.innerHTML = `
+            <div style="text-align: center; padding: 40px 0; color: #666;">
+                Loading metadata...
+            </div>
+        `;
+
+        this.metadataPanel.appendChild(metadataHeader);
+        this.metadataPanel.appendChild(this.metadataContent);
+
         // Assemble the modal
         this.imageArea.appendChild(this.mainImage);
         this.imageArea.appendChild(this.imageInfo);
@@ -176,6 +223,7 @@ class XJImageNavigator {
         this.imageArea.appendChild(this.closeBtn);
 
         this.container.appendChild(this.imageArea);
+        this.container.appendChild(this.metadataPanel);
         this.overlay.appendChild(this.container);
     }
 
@@ -208,13 +256,20 @@ class XJImageNavigator {
 
         document.addEventListener('keydown', this.keyHandler);
 
-        // Click anywhere on the dialog to close and select current image
-        this.overlay.onclick = (e) => {
-            // Close on any click (clicking anywhere selects and exits)
-            this.close();
+        // Click on image area to close and select current image
+        this.imageArea.onclick = (e) => {
+            // Only close if clicking directly on the image area (not on overlays)
+            if (e.target === this.imageArea || e.target === this.mainImage) {
+                this.close();
+            }
         };
 
-        // Prevent clicks on UI elements from bubbling up and closing
+        // Prevent clicks on metadata panel from closing
+        this.metadataPanel.onclick = (e) => {
+            e.stopPropagation();
+        };
+
+        // Close button
         this.closeBtn.onclick = (e) => {
             e.stopPropagation();
             this.close();
@@ -231,7 +286,172 @@ class XJImageNavigator {
 
             // Update image info
             this.imageInfo.textContent = `${this.currentIndex + 1} / ${this.images.length} - ${currentImage}`;
+
+            // Load metadata for current image
+            this.loadMetadata(currentImage);
         }
+    }
+
+    async loadMetadata(filename) {
+        this.metadataContent.innerHTML = `
+            <div style="text-align: center; padding: 40px 0; color: #666;">
+                Loading metadata...
+            </div>
+        `;
+
+        try {
+            const response = await fetch(
+                `/xjnodes/get_image_metadata?` +
+                `directory=${encodeURIComponent(this.directory)}&` +
+                `subdirectory=${encodeURIComponent(this.subdirectory)}&` +
+                `filename=${encodeURIComponent(filename)}`
+            );
+
+            if (response.ok) {
+                const data = await response.json();
+                this.renderMetadata(data);
+            } else {
+                this.renderError("Failed to load metadata");
+            }
+        } catch (error) {
+            console.error("Failed to load metadata:", error);
+            this.renderError("Error loading metadata");
+        }
+    }
+
+    renderMetadata(data) {
+        if (!data.success || !data.parsed || !data.parsed.nodes || data.parsed.nodes.length === 0) {
+            this.metadataContent.innerHTML = `
+                <div style="text-align: center; padding: 40px 20px; color: #666;">
+                    No generation parameters found
+                </div>
+            `;
+            return;
+        }
+
+        const nodes = data.parsed.nodes;
+        let html = "";
+
+        // Render each node as a section
+        nodes.forEach((node) => {
+            html += this.renderNode(node);
+        });
+
+        this.metadataContent.innerHTML = html;
+    }
+
+    renderNode(node) {
+        const title = node.title !== node.type ?
+            `${node.icon} ${node.type} #${node.id} (${node.title})` :
+            `${node.icon} ${node.type} #${node.id}`;
+
+        return `
+            <div style="margin-bottom: 24px;">
+                <div style="
+                    color: #fff;
+                    font-weight: 600;
+                    margin-bottom: 12px;
+                    font-size: 14px;
+                    padding-bottom: 8px;
+                    border-bottom: 1px solid #333;
+                ">${this.escapeHtml(title)}</div>
+
+                <div style="margin-left: 8px;">
+                    ${this.renderParams(node.params)}
+                </div>
+            </div>
+        `;
+    }
+
+    renderParams(params) {
+        let html = "";
+
+        // Define display order and labels (NO seed/vae)
+        const paramOrder = [
+            { key: "checkpoint", label: "Checkpoint" },
+            { key: "lora", label: "LoRA" },
+            { key: "lora_strength", label: "Strength" },
+            { key: "sampler", label: "Sampler" },
+            { key: "scheduler", label: "Scheduler" },
+            { key: "steps", label: "Steps" },
+            { key: "cfg", label: "CFG" },
+            { key: "denoise", label: "Denoise" },
+            { key: "positive", label: "Positive" },
+            { key: "negative", label: "Negative" },
+        ];
+
+        paramOrder.forEach(({ key, label }) => {
+            if (params.hasOwnProperty(key)) {
+                const value = params[key];
+
+                // Special rendering for prompts (multi-line)
+                if (key === "positive" || key === "negative") {
+                    html += this.renderPromptParam(label, value);
+                } else {
+                    html += this.renderParam(label, value);
+                }
+            }
+        });
+
+        return html;
+    }
+
+    renderParam(label, value) {
+        return `
+            <div style="
+                display: flex;
+                margin-bottom: 8px;
+                line-height: 1.5;
+            ">
+                <span style="
+                    color: #888;
+                    min-width: 90px;
+                    flex-shrink: 0;
+                ">${label}:</span>
+                <span style="
+                    color: #ddd;
+                    word-break: break-word;
+                ">${this.escapeHtml(String(value))}</span>
+            </div>
+        `;
+    }
+
+    renderPromptParam(label, text) {
+        // Truncate very long prompts
+        const maxLength = 200;
+        const displayText = text.length > maxLength ?
+            text.substring(0, maxLength) + "..." : text;
+
+        return `
+            <div style="margin-bottom: 12px;">
+                <div style="color: #888; margin-bottom: 4px;">${label}:</div>
+                <div style="
+                    color: #ddd;
+                    background: #2a2a2a;
+                    padding: 10px;
+                    border-radius: 4px;
+                    border-left: 3px solid #444;
+                    white-space: pre-wrap;
+                    word-break: break-word;
+                    font-size: 12px;
+                    line-height: 1.6;
+                ">${this.escapeHtml(displayText)}</div>
+            </div>
+        `;
+    }
+
+    renderError(message) {
+        this.metadataContent.innerHTML = `
+            <div style="text-align: center; padding: 40px 20px; color: #666;">
+                ${this.escapeHtml(message)}
+            </div>
+        `;
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     navigate(direction) {
