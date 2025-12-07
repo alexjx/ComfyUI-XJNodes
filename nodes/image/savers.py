@@ -69,8 +69,9 @@ class XJSaveImageWithMetadata:
                     {"default": 5, "min": 1, "max": 10, "step": 1},
                 ),
                 "filename_delimiter": ("STRING", {"default": "_"}),
+                "number_at_start": ("BOOLEAN", {"default": False}),
                 "extension": (["png", "jpg", "jpeg", "webp", "bmp", "tiff"],),
-                "quality": ("INT", {"default": 95, "min": 1, "max": 100, "step": 1}),
+                "quality": ("INT", {"default": 100, "min": 1, "max": 100, "step": 1}),
                 "dpi": ("INT", {"default": 300, "min": 72, "max": 2400, "step": 1}),
                 "overwrite_existing": ("BOOLEAN", {"default": False}),
             },
@@ -104,6 +105,7 @@ class XJSaveImageWithMetadata:
         metadata="",
         number_padding=5,
         filename_delimiter="_",
+        number_at_start=False,
         overwrite_existing=False,
         prompt=None,
         extra_pnginfo=None,
@@ -180,7 +182,10 @@ class XJSaveImageWithMetadata:
             counter_str = str(counter).zfill(number_padding)
 
             # Build filename with custom delimiter
-            file = f"{filename_with_batch_num}{filename_delimiter}{counter_str}.{extension}"
+            if number_at_start:
+                file = f"{counter_str}{filename_delimiter}{filename_with_batch_num}.{extension}"
+            else:
+                file = f"{filename_with_batch_num}{filename_delimiter}{counter_str}.{extension}"
             file_path = os.path.join(full_output_folder, file)
 
             # Anti-overwrite: if file exists and overwrite is disabled, find next available number
@@ -189,7 +194,10 @@ class XJSaveImageWithMetadata:
                 while os.path.exists(file_path):
                     counter += 1
                     counter_str = str(counter).zfill(number_padding)
-                    file = f"{filename_with_batch_num}{filename_delimiter}{counter_str}.{extension}"
+                    if number_at_start:
+                        file = f"{counter_str}{filename_delimiter}{filename_with_batch_num}.{extension}"
+                    else:
+                        file = f"{filename_with_batch_num}{filename_delimiter}{counter_str}.{extension}"
                     file_path = os.path.join(full_output_folder, file)
 
             # Save image based on format

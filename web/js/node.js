@@ -125,26 +125,6 @@ class XJImageNavigator {
             <div><strong style="color: #fff;">ESC</strong> Exit</div>
         `;
 
-        // Create image info overlay (below keyboard help)
-        this.imageInfo = document.createElement('div');
-        this.imageInfo.style.cssText = `
-            position: absolute;
-            top: 140px;
-            right: 30px;
-            background: rgba(0, 0, 0, 0.8);
-            color: #fff;
-            padding: 12px 16px;
-            border-radius: 6px;
-            font-size: 14px;
-            font-family: monospace;
-            backdrop-filter: blur(10px);
-            text-align: left;
-            pointer-events: none;
-            max-width: 300px;
-            word-wrap: break-word;
-            opacity: 0.5;
-        `;
-
         // Close button overlay
         this.closeBtn = document.createElement('button');
         this.closeBtn.innerHTML = '✕';
@@ -185,9 +165,9 @@ class XJImageNavigator {
             font-size: 13px;
         `;
 
-        // Metadata panel header (sticky)
-        const metadataHeader = document.createElement('div');
-        metadataHeader.style.cssText = `
+        // Metadata panel header (sticky) - includes image info
+        this.metadataHeader = document.createElement('div');
+        this.metadataHeader.style.cssText = `
             padding: 20px;
             position: sticky;
             top: 0;
@@ -195,11 +175,18 @@ class XJImageNavigator {
             border-bottom: 1px solid #333;
             z-index: 1;
         `;
-        metadataHeader.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h3 style="margin: 0; color: #fff; font-size: 16px;">📊 Generation Info</h3>
-            </div>
+        this.metadataHeader.innerHTML = `
+            <h3 style="margin: 0 0 10px 0; color: #fff; font-size: 16px;">📊 Generation Info</h3>
+            <div id="image-info-text" style="
+                font-size: 12px;
+                color: #888;
+                font-family: monospace;
+                word-break: break-word;
+            ">Loading...</div>
         `;
+
+        // Get reference to image info text element
+        this.imageInfoText = null; // Will be set after appending
 
         // Metadata content area
         this.metadataContent = document.createElement('div');
@@ -213,12 +200,14 @@ class XJImageNavigator {
             </div>
         `;
 
-        this.metadataPanel.appendChild(metadataHeader);
+        this.metadataPanel.appendChild(this.metadataHeader);
         this.metadataPanel.appendChild(this.metadataContent);
+
+        // Get reference to image info text after DOM is ready
+        this.imageInfoText = this.metadataHeader.querySelector('#image-info-text');
 
         // Assemble the modal
         this.imageArea.appendChild(this.mainImage);
-        this.imageArea.appendChild(this.imageInfo);
         this.imageArea.appendChild(this.keyboardHelp);
         this.imageArea.appendChild(this.closeBtn);
 
@@ -284,8 +273,10 @@ class XJImageNavigator {
             const previewParams = app.getPreviewFormatParam ? app.getPreviewFormatParam() : '';
             this.mainImage.src = `/view?filename=${encodeURIComponent(currentImage)}&type=${this.directory}&subfolder=${encodeURIComponent(this.subdirectory)}${previewParams}&preview=false&channel=rgba&rand=${Math.random()}`;
 
-            // Update image info
-            this.imageInfo.textContent = `${this.currentIndex + 1} / ${this.images.length} - ${currentImage}`;
+            // Update image info in metadata panel header
+            if (this.imageInfoText) {
+                this.imageInfoText.textContent = `${this.currentIndex + 1} / ${this.images.length} - ${currentImage}`;
+            }
 
             // Load metadata for current image
             this.loadMetadata(currentImage);
