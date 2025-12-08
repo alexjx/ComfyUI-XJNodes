@@ -69,7 +69,10 @@ class XJSaveImageWithMetadata:
                     {"default": 5, "min": 1, "max": 10, "step": 1},
                 ),
                 "filename_delimiter": ("STRING", {"default": "_"}),
-                "number_at_start": ("BOOLEAN", {"default": False}),
+                "filename_mode": (
+                    ["prefix_number", "number_prefix", "number_only"],
+                    {"default": "prefix_number"},
+                ),
                 "extension": (["png", "jpg", "jpeg", "webp", "bmp", "tiff"],),
                 "quality": ("INT", {"default": 100, "min": 1, "max": 100, "step": 1}),
                 "dpi": ("INT", {"default": 300, "min": 72, "max": 2400, "step": 1}),
@@ -105,7 +108,7 @@ class XJSaveImageWithMetadata:
         metadata="",
         number_padding=5,
         filename_delimiter="_",
-        number_at_start=False,
+        filename_mode="prefix_number",
         overwrite_existing=False,
         prompt=None,
         extra_pnginfo=None,
@@ -133,6 +136,19 @@ class XJSaveImageWithMetadata:
                 filename_prefix, output_folder, images[0].shape[1], images[0].shape[0]
             )
         )
+
+        # For "number_only" mode, scan for all numbered files regardless of prefix
+        if filename_mode == "number_only":
+            # Find the highest numbered file in the directory
+            max_counter = 0
+            if os.path.exists(full_output_folder):
+                for existing_file in os.listdir(full_output_folder):
+                    # Match files that start with digits followed by any delimiter
+                    match = re.match(r"^(\d+)[\._-]", existing_file)
+                    if match:
+                        file_num = int(match.group(1))
+                        max_counter = max(max_counter, file_num)
+            counter = max_counter + 1
 
         results = []
         file_paths = []
@@ -181,22 +197,24 @@ class XJSaveImageWithMetadata:
             # Format counter with custom padding
             counter_str = str(counter).zfill(number_padding)
 
-            # Build filename with custom delimiter
-            if number_at_start:
+            # Build filename based on mode
+            if filename_mode == "number_only" or filename_mode == "number_prefix":
+                # number_only: 00001_ComfyUI.png (global counter)
+                # number_prefix: 00001_ComfyUI.png (prefix-specific counter)
                 file = f"{counter_str}{filename_delimiter}{filename_with_batch_num}.{extension}"
-            else:
+            else:  # prefix_number
+                # prefix_number: ComfyUI_00001.png
                 file = f"{filename_with_batch_num}{filename_delimiter}{counter_str}.{extension}"
             file_path = os.path.join(full_output_folder, file)
 
             # Anti-overwrite: if file exists and overwrite is disabled, find next available number
             if not overwrite_existing:
-                original_counter = counter
                 while os.path.exists(file_path):
                     counter += 1
                     counter_str = str(counter).zfill(number_padding)
-                    if number_at_start:
+                    if filename_mode == "number_only" or filename_mode == "number_prefix":
                         file = f"{counter_str}{filename_delimiter}{filename_with_batch_num}.{extension}"
-                    else:
+                    else:  # prefix_number
                         file = f"{filename_with_batch_num}{filename_delimiter}{counter_str}.{extension}"
                     file_path = os.path.join(full_output_folder, file)
 
