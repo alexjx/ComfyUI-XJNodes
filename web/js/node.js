@@ -176,7 +176,24 @@ class XJImageNavigator {
             z-index: 1;
         `;
         this.metadataHeader.innerHTML = `
-            <h3 style="margin: 0 0 10px 0; color: #fff; font-size: 16px;">📊 Generation Info</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3 style="margin: 0; color: #fff; font-size: 16px;">📊 Generation Info</h3>
+                <button id="delete-image-btn" style="
+                    background: #d32f2f;
+                    border: none;
+                    color: #fff;
+                    padding: 6px 12px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 12px;
+                    transition: background 0.2s;
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                " title="Delete this image">
+                    🗑️ Delete
+                </button>
+            </div>
             <div id="image-info-text" style="
                 font-size: 12px;
                 color: #888;
@@ -203,8 +220,9 @@ class XJImageNavigator {
         this.metadataPanel.appendChild(this.metadataHeader);
         this.metadataPanel.appendChild(this.metadataContent);
 
-        // Get reference to image info text after DOM is ready
+        // Get reference to image info text and delete button after DOM is ready
         this.imageInfoText = this.metadataHeader.querySelector('#image-info-text');
+        this.deleteButton = this.metadataHeader.querySelector('#delete-image-btn');
 
         // Assemble the modal
         this.imageArea.appendChild(this.mainImage);
@@ -262,6 +280,20 @@ class XJImageNavigator {
         this.closeBtn.onclick = (e) => {
             e.stopPropagation();
             this.close();
+        };
+
+        // Delete button
+        this.deleteButton.onclick = async (e) => {
+            e.stopPropagation();
+            await this.handleDelete();
+        };
+
+        // Hover effect for delete button
+        this.deleteButton.onmouseover = () => {
+            this.deleteButton.style.background = '#b71c1c';
+        };
+        this.deleteButton.onmouseout = () => {
+            this.deleteButton.style.background = '#d32f2f';
         };
     }
 
@@ -450,6 +482,77 @@ class XJImageNavigator {
         if (newIndex >= 0 && newIndex < this.images.length) {
             this.currentIndex = newIndex;
             this.updateDisplay();
+        }
+    }
+
+    async handleDelete() {
+        const currentImage = this.images[this.currentIndex];
+
+        if (!currentImage) {
+            return;
+        }
+
+        // Show confirmation dialog
+        const confirmed = confirm(`Are you sure you want to delete "${currentImage}"?\n\nThis action cannot be undone.`);
+
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            // Call delete API
+            const response = await fetch('/xjnodes/delete_image', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    directory: this.directory,
+                    subdirectory: this.subdirectory,
+                    filename: currentImage
+                })
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                // Remove the image from our list
+                this.images.splice(this.currentIndex, 1);
+
+                // Update the node's image widget to remove the deleted image
+                const imageWidget = this.node.widgets.find(w => w.name === "image");
+                if (imageWidget && imageWidget.options && imageWidget.options.values) {
+                    const index = imageWidget.options.values.indexOf(currentImage);
+                    if (index > -1) {
+                        imageWidget.options.values.splice(index, 1);
+                    }
+                }
+
+                // If no more images, close the modal
+                if (this.images.length === 0) {
+                    alert('No more images in this directory.');
+                    this.close();
+                    return;
+                }
+
+                // Adjust currentIndex if we deleted the last image
+                if (this.currentIndex >= this.images.length) {
+                    this.currentIndex = this.images.length - 1;
+                }
+
+                // Update display to show next/previous image
+                this.updateDisplay();
+
+                // Update the node's image widget value
+                if (imageWidget && this.images[this.currentIndex]) {
+                    imageWidget.value = this.images[this.currentIndex];
+                }
+            } else {
+                alert(`Failed to delete image: ${result.error || 'Unknown error'}`);
+            }
+        } catch (error) {
+            console.error('Error deleting image:', error);
+            alert(`Error deleting image: ${error.message}`);
         }
     }
 

@@ -374,6 +374,60 @@ async def get_image_metadata(request):
         }, status=500)
 
 
+@server.PromptServer.instance.routes.post("/xjnodes/delete_image")
+async def delete_image(request):
+    """
+    Delete an image file from a directory.
+    """
+    try:
+        data = await request.json()
+        directory = data.get("directory", "input")
+        subdirectory = data.get("subdirectory", "")
+        filename = data.get("filename", "")
+
+        if not filename:
+            return web.json_response({"error": "No filename provided"}, status=400)
+
+        # Get base directory
+        if directory == "input":
+            base_dir = folder_paths.get_input_directory()
+        elif directory == "output":
+            base_dir = folder_paths.get_output_directory()
+        else:
+            return web.json_response({"error": "Invalid directory type"}, status=400)
+
+        # Clean subdirectory
+        subdirectory = subdirectory.strip().strip('/')
+
+        # Construct full file path
+        if subdirectory:
+            image_path = os.path.join(base_dir, subdirectory, filename)
+        else:
+            image_path = os.path.join(base_dir, filename)
+
+        # Security check: ensure the file is within base directory
+        if not os.path.abspath(image_path).startswith(os.path.abspath(base_dir)):
+            return web.json_response({"error": "Invalid file path"}, status=400)
+
+        # Check file exists
+        if not os.path.exists(image_path):
+            return web.json_response({"error": "File not found"}, status=404)
+
+        # Delete the file
+        os.remove(image_path)
+
+        return web.json_response({
+            "success": True,
+            "message": f"Successfully deleted {filename}"
+        })
+
+    except Exception as e:
+        return web.json_response({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
 __all__ = [
     "NODE_CLASS_MAPPINGS",
     "NODE_DISPLAY_NAME_MAPPINGS",
