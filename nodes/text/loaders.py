@@ -1,13 +1,15 @@
 import os
 import random
 import string
+import hashlib
 import folder_paths
 from collections import deque
 
 
 class XJRandomTextFromList:
-    # Class-level memory to track recently selected items
-    _selection_memory = deque(maxlen=100)  # Global memory limit
+    # Class-level memory to track recently selected items per unique list
+    # Key: hash of list content, Value: deque of recently selected indices
+    _selection_memories = {}  # Dict of deques, one per unique list
 
     @staticmethod
     def parse_index_list(index_string):
@@ -107,8 +109,18 @@ class XJRandomTextFromList:
             if not valid_indices:
                 raise Exception(f"No valid indices in range for list with {len(text_list)} items")
 
-            # Set the random seed
-            random.seed(seed)
+            # Create a unique key for this list based on its content and valid indices
+            list_key = hashlib.md5(
+                ('|'.join(text_list) + '||' + index_list).encode('utf-8')
+            ).hexdigest()
+
+            # Get or create memory deque for this specific list
+            if list_key not in self._selection_memories:
+                self._selection_memories[list_key] = deque(maxlen=100)
+            memory = self._selection_memories[list_key]
+
+            # Create a Random object with the seed for better randomness
+            rng = random.Random(seed)
 
             # Convert to 0-indexed for accessing text_list
             available_indices = [i - 1 for i in valid_indices]
@@ -119,22 +131,30 @@ class XJRandomTextFromList:
             selected_index = None
 
             for _ in range(max_retries):
-                candidate_index = random.choice(available_indices)
-                if candidate_index not in list(self._selection_memory)[-memory_size:]:
+                candidate_index = rng.choice(available_indices)
+                if candidate_index not in list(memory)[-memory_size:]:
                     selected_index = candidate_index
                     break
 
             # If all retries failed (unlikely), just use a random selection
             if selected_index is None:
-                selected_index = random.choice(available_indices)
+                selected_index = rng.choice(available_indices)
 
-            # Add selected index to memory
-            self._selection_memory.append(selected_index)
+            # Add selected index to this list's memory
+            memory.append(selected_index)
 
             selected_text = text_list[selected_index]
         else:  # random
-            # Set the random seed for reproducibility
-            random.seed(seed)
+            # Create a unique key for this list based on its content
+            list_key = hashlib.md5('|'.join(text_list).encode('utf-8')).hexdigest()
+
+            # Get or create memory deque for this specific list
+            if list_key not in self._selection_memories:
+                self._selection_memories[list_key] = deque(maxlen=100)
+            memory = self._selection_memories[list_key]
+
+            # Create a Random object with the seed for better randomness
+            rng = random.Random(seed)
 
             # Calculate memory size (less than half of list size)
             memory_size = max(1, len(text_list) // 2 - 1)
@@ -144,18 +164,18 @@ class XJRandomTextFromList:
             selected_index = None
 
             for _ in range(max_retries):
-                candidate_index = random.randint(0, len(text_list) - 1)
+                candidate_index = rng.randint(0, len(text_list) - 1)
                 # Check if candidate index is in recent memory
-                if candidate_index not in list(self._selection_memory)[-memory_size:]:
+                if candidate_index not in list(memory)[-memory_size:]:
                     selected_index = candidate_index
                     break
 
             # If all retries failed (unlikely), just use a random index
             if selected_index is None:
-                selected_index = random.randint(0, len(text_list) - 1)
+                selected_index = rng.randint(0, len(text_list) - 1)
 
-            # Add selected index to memory
-            self._selection_memory.append(selected_index)
+            # Add selected index to this list's memory
+            memory.append(selected_index)
 
             selected_text = text_list[selected_index]
 
@@ -163,8 +183,9 @@ class XJRandomTextFromList:
 
 
 class XJRandomTextFromFile:
-    # Class-level memory to track recently selected items
-    _selection_memory = deque(maxlen=100)  # Global memory limit
+    # Class-level memory to track recently selected items per unique file
+    # Key: hash of file content, Value: deque of recently selected indices
+    _selection_memories = {}  # Dict of deques, one per unique file
 
     @classmethod
     def INPUT_TYPES(s):
@@ -237,8 +258,16 @@ class XJRandomTextFromFile:
                 raise Exception(f"Choice {choice} exceeded max length {len(text_list)}")
             selected_text = text_list[choice - 1]
         else:
-            # Set the random seed for reproducibility
-            random.seed(seed)
+            # Create a unique key for this file based on its content
+            list_key = hashlib.md5('|'.join(text_list).encode('utf-8')).hexdigest()
+
+            # Get or create memory deque for this specific file
+            if list_key not in self._selection_memories:
+                self._selection_memories[list_key] = deque(maxlen=100)
+            memory = self._selection_memories[list_key]
+
+            # Create a Random object with the seed for better randomness
+            rng = random.Random(seed)
 
             # Calculate memory size (less than half of list size)
             memory_size = max(1, len(text_list) // 2 - 1)
@@ -248,18 +277,18 @@ class XJRandomTextFromFile:
             selected_index = None
 
             for _ in range(max_retries):
-                candidate_index = random.randint(0, len(text_list) - 1)
+                candidate_index = rng.randint(0, len(text_list) - 1)
                 # Check if candidate index is in recent memory
-                if candidate_index not in list(self._selection_memory)[-memory_size:]:
+                if candidate_index not in list(memory)[-memory_size:]:
                     selected_index = candidate_index
                     break
 
             # If all retries failed (unlikely), just use a random index
             if selected_index is None:
-                selected_index = random.randint(0, len(text_list) - 1)
+                selected_index = rng.randint(0, len(text_list) - 1)
 
-            # Add selected index to memory
-            self._selection_memory.append(selected_index)
+            # Add selected index to this file's memory
+            memory.append(selected_index)
 
             selected_text = text_list[selected_index]
 
