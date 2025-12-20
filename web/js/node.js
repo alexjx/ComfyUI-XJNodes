@@ -392,6 +392,7 @@ class XJImageNavigator {
         // Define display order and labels (NO seed/vae)
         const paramOrder = [
             { key: "checkpoint", label: "Checkpoint" },
+            { key: "unet", label: "Diffusion Model" },
             { key: "lora", label: "LoRA" },
             { key: "lora_strength", label: "Strength" },
             { key: "sampler", label: "Sampler" },

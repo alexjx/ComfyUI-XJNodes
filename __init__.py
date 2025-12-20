@@ -26,6 +26,7 @@ class WorkflowMetadataParser:
 
         # Models
         "checkpoint": ["ckpt_name", "model_name", "checkpoint"],
+        "unet": ["unet_name"],  # Load Diffusion Model node
         "lora": ["lora_name", "lora"],
         "lora_strength": ["strength_model", "lora_strength", "strength"],
 
@@ -44,14 +45,20 @@ class WorkflowMetadataParser:
         if not workflow:
             return result
 
-        # Get workflow metadata for titles
+        # Get workflow metadata for titles and node modes
         workflow_meta = metadata.get("workflow", {})
         node_titles = self._extract_node_titles(workflow_meta)
+        node_modes = self._extract_node_modes(workflow_meta)
 
         # Process each node and extract relevant params
         for node_id, node_data in workflow.items():
             class_type = node_data.get("class_type", "")
             inputs = node_data.get("inputs", {})
+
+            # Skip bypassed (mode=2) and muted (mode=4) nodes
+            node_mode = node_modes.get(node_id, 0)
+            if node_mode in [2, 4]:
+                continue
 
             # Extract all key params this node has
             params = self._extract_node_params(inputs, class_type)
@@ -125,6 +132,24 @@ class WorkflowMetadataParser:
 
         return titles
 
+    def _extract_node_modes(self, workflow_meta):
+        """
+        Extract node modes from workflow metadata.
+        Mode 0 = ALWAYS (normal), Mode 2 = BYPASS, Mode 4 = MUTE
+        """
+        modes = {}
+
+        if not workflow_meta or "nodes" not in workflow_meta:
+            return modes
+
+        for node in workflow_meta.get("nodes", []):
+            node_id = str(node.get("id", ""))
+            mode = node.get("mode", 0)
+            if node_id:
+                modes[node_id] = mode
+
+        return modes
+
     def _get_node_icon(self, class_type):
         """
         Get emoji icon based on node type.
@@ -133,7 +158,7 @@ class WorkflowMetadataParser:
 
         if "sampler" in type_lower:
             return "🎨"
-        elif "checkpoint" in type_lower or "model" in type_lower:
+        elif "checkpoint" in type_lower or "unet" in type_lower or "model" in type_lower:
             return "🤖"
         elif "lora" in type_lower:
             return "🔧"
