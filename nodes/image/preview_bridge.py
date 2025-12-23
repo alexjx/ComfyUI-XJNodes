@@ -7,7 +7,7 @@ import hashlib
 import nodes
 import logging
 
-from nodes import ExecutionBlocker
+from comfy_execution.graph_utils import ExecutionBlocker
 
 # Global cache for tracking image state per node instance
 # Key: unique_id, Value: (image_hash, preview_filename)
