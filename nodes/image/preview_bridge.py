@@ -7,9 +7,7 @@ import hashlib
 import nodes
 import logging
 
-# ExecutionBlocker exists but doesn't reliably stop workflow in all contexts
-# Using exception-based approach for reliable stopping
-HAS_EXECUTION_BLOCKER = False
+from nodes import ExecutionBlocker
 
 # Global cache for tracking image state per node instance
 # Key: unique_id, Value: (image_hash, preview_filename)
@@ -230,7 +228,8 @@ class XJImagePreviewBridge:
                 # No mask widget value
                 batch, height, width, _ = images.shape
                 output_mask = torch.zeros((batch, height, width), dtype=torch.float32)
-                should_stop = stop_if_empty
+                # STATE 1: Image changed - always stop to show preview
+                should_stop = True
                 stop_reason = "Preview shown. Please create a mask:\n1. Right-click the node\n2. Select 'Open with Mask Editor'\n3. Create your mask\n4. Save and re-run"
 
         # ========== STATE 2 & 3: Image Unchanged ==========
@@ -304,18 +303,16 @@ class XJImagePreviewBridge:
 
         # ========== Execute or Block Based on State ==========
         if should_stop:
-            if HAS_EXECUTION_BLOCKER:
-                logging.info(f"[XJNodes] PreviewBridge: Stopping workflow - {stop_reason}")
-                result = (ExecutionBlocker(None), ExecutionBlocker(None))
-            else:
-                raise ValueError(f"⚠️ Workflow stopped:\n{stop_reason}")
-        else:
-            # Continue with actual data
-            result = (images, output_mask)
+            # Use ExecutionBlocker to stop while allowing preview to be shown
+            logging.info(f"[XJNodes] PreviewBridge: Stopping workflow - {stop_reason}")
+            return {
+                "ui": {"images": saved_images},
+                "result": (ExecutionBlocker(None), ExecutionBlocker(None))
+            }
 
         return {
             "ui": {"images": saved_images},
-            "result": result
+            "result": (images, output_mask)
         }
 
     @classmethod
