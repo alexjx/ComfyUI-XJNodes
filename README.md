@@ -59,14 +59,30 @@ This package provides custom nodes organized into four main categories:
   - Scale images to target megapixel resolution
 
 **Batch:**
-- **Image Grid** 
+- **Image Grid**
   - Arrange multiple images into a grid layout
-- **One Image From Batch** 
+- **One Image From Batch**
   - Extract a single image from a batch by index
-- **Image List Filter** 
+- **Image List Filter**
   - Filter images from a list based on criteria
-- **Random Images From Batch** 
+- **Random Images From Batch**
   - Randomly select images from a batch
+
+**Compare:**
+- **Image Pair Compare**
+  - Compare two image sets with paired selection
+  - Numeric tabs (1, 2, 3...) to select corresponding A/B image pairs
+  - Slide and Click comparison modes
+  - Image size display under each image
+  - Inspired by [rgthree's Image Comparar](https://github.com/rgthree/rgthree-comfy)
+
+### Lora Nodes
+
+- **Conditional Lora Loader**
+  - Load multiple loras dynamically with a single boolean condition
+  - Enable/disable all loras with one toggle
+  - Supports multiple lora inputs (lora_1, lora_2, etc.) with individual strength controls
+  - Inspired by [rgthree's Power Lora Loader](https://github.com/rgthree/rgthree-comfy)
 
 ### Text Nodes
 
