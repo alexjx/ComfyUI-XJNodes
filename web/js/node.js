@@ -1936,5 +1936,217 @@ app.registerExtension({
                 values: ["Slide", "Click"],
             };
         }
+
+        // Handle XJConditionalLoraLoader node
+        if (nodeData.name === "XJConditionalLoraLoader") {
+            const originalNodeCreated = nodeType.prototype.onNodeCreated;
+
+            nodeType.prototype.onNodeCreated = async function () {
+                const result = originalNodeCreated?.apply(this, arguments);
+
+                this.loraCounter = 0;
+                this.loraWidgets = [];
+                this.serialize_widgets = true;
+                this.cachedLoraList = ["None"]; // Cache to avoid repeated API calls
+
+                // Fetch loras immediately on node creation
+                await this.fetchLoraList();
+
+                // Add initial "Add Lora" button
+                this.addLoraButton = this.addWidget("button", "➕ Add Lora", null, () => {
+                    this.addLoraSet();
+                });
+
+                // Don't serialize the button
+                this.addLoraButton.serialize = false;
+
+                // Adjust node size
+                this.setSize([320, 120]);
+
+                return result;
+            };
+
+            // Method to fetch lora list from API
+            nodeType.prototype.fetchLoraList = async function() {
+                try {
+                    const resp = await fetch("/xjnodes/get_loras");
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.success && data.loras) {
+                            this.cachedLoraList = ["None", ...data.loras];
+                        }
+                    }
+                } catch (e) {
+                    console.error("[XJConditionalLoraLoader] Failed to fetch lora list:", e);
+                }
+            };
+
+            // Method to get lora list (returns cached list)
+            nodeType.prototype.getLoraList = function() {
+                return this.cachedLoraList || ["None"];
+            };
+
+            // Method to refresh lora list asynchronously
+            nodeType.prototype.refreshLoraList = async function() {
+                await this.fetchLoraList();
+
+                // Update all existing lora widgets with new list
+                const loraList = this.getLoraList();
+                for (const widgetSet of this.loraWidgets) {
+                    const currentValue = widgetSet.lora.value;
+                    widgetSet.lora.options.values = loraList;
+                    // Restore value if it still exists
+                    if (loraList.includes(currentValue)) {
+                        widgetSet.lora.value = currentValue;
+                    }
+                }
+                this.setDirtyCanvas(true, true);
+            };
+
+            // Method to add a set of lora widgets
+            nodeType.prototype.addLoraSet = function() {
+                this.loraCounter++;
+                const loraNum = this.loraCounter;
+                const loraKey = `lora_${loraNum}`;
+
+                // Get list of available loras
+                const loraList = this.getLoraList();
+
+                // Create widgets for this lora (no enable toggle, just lora + strength)
+                const loraWidget = this.addWidget("combo", `LoRA ${loraNum}`, "None", () => {
+                    this.setDirtyCanvas(true);
+                }, { values: loraList });
+
+                const strengthWidget = this.addWidget("number", `Strength ${loraNum}`, 1.0, () => {
+                    this.setDirtyCanvas(true);
+                }, { min: -10.0, max: 10.0, step: 0.01, precision: 2 });
+
+                const removeButton = this.addWidget("button", `🗑️ Remove`, null, () => {
+                    this.removeLoraSet(loraNum);
+                });
+                removeButton.serialize = false;
+
+                // Store widget references
+                const widgetSet = {
+                    id: loraNum,
+                    key: loraKey,
+                    lora: loraWidget,
+                    strength: strengthWidget,
+                    remove: removeButton
+                };
+
+                this.loraWidgets.push(widgetSet);
+
+                // Move "Add Lora" button to the end
+                const buttonIndex = this.widgets.indexOf(this.addLoraButton);
+                if (buttonIndex !== -1) {
+                    this.widgets.splice(buttonIndex, 1);
+                    this.widgets.push(this.addLoraButton);
+                }
+
+                // Resize node to fit all widgets
+                const newHeight = Math.max(120, 50 + this.widgets.length * 25);
+                this.setSize([320, newHeight]);
+
+                return widgetSet;
+            };
+
+            // Method to remove a lora set
+            nodeType.prototype.removeLoraSet = function(loraNum) {
+                const widgetSet = this.loraWidgets.find(w => w.id === loraNum);
+                if (!widgetSet) return;
+
+                // Remove all widgets in this set
+                const widgetsToRemove = [
+                    widgetSet.lora,
+                    widgetSet.strength,
+                    widgetSet.remove
+                ];
+
+                for (const widget of widgetsToRemove) {
+                    const index = this.widgets.indexOf(widget);
+                    if (index !== -1) {
+                        this.widgets.splice(index, 1);
+                    }
+                }
+
+                // Remove from loraWidgets array
+                const setIndex = this.loraWidgets.indexOf(widgetSet);
+                if (setIndex !== -1) {
+                    this.loraWidgets.splice(setIndex, 1);
+                }
+
+                // Resize node
+                const newHeight = Math.max(120, 50 + this.widgets.length * 25);
+                this.setSize([320, newHeight]);
+
+                this.setDirtyCanvas(true, true);
+            };
+
+            // Override getExtraMenuOptions to add refresh loras option
+            const originalGetExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
+            nodeType.prototype.getExtraMenuOptions = function(_, options) {
+                if (originalGetExtraMenuOptions) {
+                    originalGetExtraMenuOptions.apply(this, arguments);
+                }
+
+                options.unshift({
+                    content: "Refresh Loras",
+                    callback: () => {
+                        this.refreshLoraList();
+                    }
+                });
+            };
+
+            // Handle refresh from ComfyUI's refresh button
+            const originalRefreshComboInNode = nodeType.prototype.refreshComboInNode;
+            nodeType.prototype.refreshComboInNode = function() {
+                if (originalRefreshComboInNode) {
+                    originalRefreshComboInNode.apply(this, arguments);
+                }
+                this.refreshLoraList();
+            };
+
+            // Handle loading from saved workflows
+            const originalOnConfigure = nodeType.prototype.onConfigure;
+            nodeType.prototype.onConfigure = function(info) {
+                if (originalOnConfigure) {
+                    originalOnConfigure.apply(this, arguments);
+                }
+
+                // Restore lora widgets from saved workflow
+                if (info.widgets_values) {
+                    // Clear existing lora widgets (but keep the button)
+                    this.loraWidgets = [];
+
+                    // Scan through widgets_values to find lora data
+                    // widgets_values format: [serialized widget values...]
+                    // We need to restore any lora widgets that were saved
+                    for (let i = 0; i < this.widgets.length; i++) {
+                        const widget = this.widgets[i];
+                        if (widget.name.startsWith("LoRA ")) {
+                            // Found a lora widget - extract its number
+                            const match = widget.name.match(/LoRA (\d+)/);
+                            if (match) {
+                                const loraNum = parseInt(match[1]);
+                                const strengthWidget = this.widgets[i + 1];
+                                const removeButton = this.widgets[i + 2];
+
+                                // Store widget set
+                                const widgetSet = {
+                                    id: loraNum,
+                                    key: `lora_${loraNum}`,
+                                    lora: widget,
+                                    strength: strengthWidget,
+                                    remove: removeButton
+                                };
+                                this.loraWidgets.push(widgetSet);
+                                this.loraCounter = Math.max(this.loraCounter, loraNum);
+                            }
+                        }
+                    }
+                }
+            };
+        }
     }
 });

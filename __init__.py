@@ -399,6 +399,25 @@ async def get_image_metadata(request):
         }, status=500)
 
 
+@server.PromptServer.instance.routes.get("/xjnodes/get_loras")
+async def get_loras(request):
+    """
+    Get list of available LoRA files.
+    """
+    try:
+        loras = folder_paths.get_filename_list("loras")
+        return web.json_response({
+            "success": True,
+            "loras": loras
+        })
+    except Exception as e:
+        return web.json_response({
+            "success": False,
+            "error": str(e),
+            "loras": []
+        })
+
+
 @server.PromptServer.instance.routes.post("/xjnodes/delete_image")
 async def delete_image(request):
     """
