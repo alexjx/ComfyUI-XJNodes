@@ -36,7 +36,7 @@ class LoadImagesFromDirBatch:
     RETURN_TYPES = ("IMAGE", "MASK", "INT")
     FUNCTION = "load_images"
 
-    CATEGORY = "XJNode/image"
+    CATEGORY = "XJNodes/image"
 
     valid_extensions = [".jpg", ".jpeg", ".png", ".webp"]
 
@@ -216,7 +216,7 @@ class LoadImagesFromDirList:
 
     FUNCTION = "load_images"
 
-    CATEGORY = "XJNode/image"
+    CATEGORY = "XJNodes/image"
 
     valid_extensions = [".jpg", ".jpeg", ".png", ".webp"]
 
@@ -330,7 +330,7 @@ class XJLoadImageWithMetadata:
             }
         }
 
-    CATEGORY = "XJNode/image"
+    CATEGORY = "XJNodes/image"
     RETURN_TYPES = (
         "IMAGE",
         "MASK",
@@ -518,7 +518,7 @@ class XJLoadImageByPath:
 
     RETURN_TYPES = ("IMAGE", "MASK")
     FUNCTION = "load_image"
-    CATEGORY = "XJNode/image"
+    CATEGORY = "XJNodes/image"
 
     def load_image(self, directory, filename):
         """Load image from directory + filename"""

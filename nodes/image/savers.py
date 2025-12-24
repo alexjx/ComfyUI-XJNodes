@@ -92,7 +92,7 @@ class XJSaveImageWithMetadata:
     OUTPUT_IS_LIST = (True,)
     FUNCTION = "save_images"
     OUTPUT_NODE = True
-    CATEGORY = "XJNode/image"
+    CATEGORY = "XJNodes/image"
 
     def save_images(
         self,

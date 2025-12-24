@@ -17,7 +17,7 @@ class XJIntOffset:
 
     RETURN_TYPES = ("INT",)
     FUNCTION = "add_offset"
-    CATEGORY = "XJNode/Util"
+    CATEGORY = "XJNodes/util"
 
     def add_offset(self, input, offset):
         return (input + offset,)
@@ -35,7 +35,7 @@ class XJIntegerIncrement:
 
     RETURN_TYPES = ("INT",)
     FUNCTION = "increment"
-    CATEGORY = "XJNode/Util"
+    CATEGORY = "XJNodes/util"
 
     def increment(self, input, increment):
         return (input + increment,)
@@ -53,7 +53,7 @@ class XJIntegerDecrement:
 
     RETURN_TYPES = ("INT",)
     FUNCTION = "decrement"
-    CATEGORY = "XJNode/Util"
+    CATEGORY = "XJNodes/util"
 
     def decrement(self, input, decrement):
         return (input - decrement,)

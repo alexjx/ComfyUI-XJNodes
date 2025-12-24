@@ -17,7 +17,7 @@ class XJSchedulerAdapter:
 
     RETURN_TYPES = (comfy.samplers.KSampler.SCHEDULERS,)
     RETURN_NAMES = ("scheduler",)
-    CATEGORY = "XJNode/Util"
+    CATEGORY = "XJNodes/util"
     FUNCTION = "doit"
 
     def doit(self, scheduler):
@@ -40,7 +40,7 @@ class XJSamplerAdapter:
 
     RETURN_TYPES = (comfy.samplers.KSampler.SAMPLERS,)
     RETURN_NAMES = ("sampler_name",)
-    CATEGORY = "XJNode/Util"
+    CATEGORY = "XJNodes/util"
     FUNCTION = "doit"
 
     def doit(self, sampler):
@@ -62,7 +62,7 @@ class XJStringPass:
 
     RETURN_TYPES = ("STRING",)
     FUNCTION = "passthrough"
-    CATEGORY = "XJNode/Util"
+    CATEGORY = "XJNodes/util"
     DESCRIPTION = """
 Passes the string through without modifying it.
 """

@@ -78,7 +78,7 @@ class XJRandomTextFromList:
     RETURN_NAMES = ("STRING",)
     OUTPUT_IS_LIST = (False, False)
     FUNCTION = "make_list"
-    CATEGORY = "XJNode/text"
+    CATEGORY = "XJNodes/text"
 
     def make_list(self, multiline_text, type, choice, seed, index_list="1, 2, 3"):
         # Split the multiline text into a list of strings
@@ -232,7 +232,7 @@ class XJRandomTextFromFile:
     RETURN_NAMES = ("STRING",)
     OUTPUT_IS_LIST = (False, False)
     FUNCTION = "make_list"
-    CATEGORY = "XJNode/text"
+    CATEGORY = "XJNodes/text"
 
     def make_list(self, file_path, type, choice, seed, file_path_override=None):
         # Use override if provided (from Text File Info node)
@@ -322,7 +322,7 @@ class XJTextListFromFile:
     RETURN_NAMES = ("text_list",)
     OUTPUT_IS_LIST = (True,)
     FUNCTION = "load_list"
-    CATEGORY = "XJNode/text"
+    CATEGORY = "XJNodes/text"
 
     def load_list(self, file_path):
         input_dir = folder_paths.get_input_directory()
@@ -381,7 +381,7 @@ class XJRandomText:
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("text",)
     FUNCTION = "generate"
-    CATEGORY = "XJNode/text"
+    CATEGORY = "XJNodes/text"
 
     def generate(self, chars, length, seed):
         # Validate chars input

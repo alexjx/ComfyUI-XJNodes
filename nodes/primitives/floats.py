@@ -16,7 +16,7 @@ class XJFloatRangeList:
     RETURN_NAMES = ("floats",)
     OUTPUT_IS_LIST = (True,)
     FUNCTION = "range_list"
-    CATEGORY = "XJNode/Util"
+    CATEGORY = "XJNodes/util"
 
     def range_list(self, start, end, step):
         return (np.arange(start, end, step).tolist(),)

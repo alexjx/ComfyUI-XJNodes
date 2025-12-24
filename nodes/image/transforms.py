@@ -98,7 +98,7 @@ class XJImageRandomTransform:
 
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "execute"
-    CATEGORY = "essentials/image manipulation"
+    CATEGORY = "XJNodes/image"
 
     def execute(
         self,
@@ -230,7 +230,7 @@ class XJImageTransform:
 
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "execute"
-    CATEGORY = "essentials/image manipulation"
+    CATEGORY = "XJNodes/image"
 
     def _find_coeffs(self, pa, pb):
         # helper to compute perspective transform coefficients for PIL

@@ -35,7 +35,7 @@ class XJContextEnter:
     RETURN_TYPES = ("*", "BOOLEAN", "BOOLEAN")
     RETURN_NAMES = ("passthrough", "FALSE", "TRUE")
     FUNCTION = "passthrough"
-    CATEGORY = "XJNode/Util"
+    CATEGORY = "XJNodes/util"
     DESCRIPTION = """
 Passthrough node with boolean outputs for establishing context boundaries.
 
@@ -77,7 +77,7 @@ class XJContextExit:
     RETURN_TYPES = ("*", "BOOLEAN", "BOOLEAN")
     RETURN_NAMES = ("passthrough", "TRUE", "FALSE")
     FUNCTION = "passthrough"
-    CATEGORY = "XJNode/Util"
+    CATEGORY = "XJNodes/util"
     DESCRIPTION = """
 Passthrough node with boolean outputs for establishing context boundaries.
 

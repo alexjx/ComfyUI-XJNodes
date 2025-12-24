@@ -27,7 +27,7 @@ class XJImageScaleCalc:
         "height",
     )
     FUNCTION = "calculate"
-    CATEGORY = "XJNode/Image"
+    CATEGORY = "XJNodes/image"
 
     def calculate(self, image, scale, divide_by=0):
         # Get current dimensions from the input image
@@ -80,7 +80,7 @@ class XJImageScaleMegapixel:
     RETURN_TYPES = ("IMAGE", "INT", "INT")
     RETURN_NAMES = ("image", "width", "height")
     FUNCTION = "scale_to_megapixels"
-    CATEGORY = "XJNode/Image"
+    CATEGORY = "XJNodes/image"
     DESCRIPTION = """
 Scale image to target megapixels.
 - fill: Scale to exactly reach target (may change aspect ratio)

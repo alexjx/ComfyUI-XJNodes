@@ -27,7 +27,7 @@ class XJJSONExtractor:
     RETURN_TYPES = ("STRING", "FLOAT", "INT", "BOOLEAN")
     RETURN_NAMES = ("string", "float", "int", "boolean")
     FUNCTION = "extract"
-    CATEGORY = "XJNode/text"
+    CATEGORY = "XJNodes/text"
 
     def extract(self, json_string, key_path):
         """

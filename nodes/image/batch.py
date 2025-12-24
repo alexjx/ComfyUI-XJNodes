@@ -29,7 +29,7 @@ class XJImageGrid:
 
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "image_grid"
-    CATEGORY = "XJNode/Image"
+    CATEGORY = "XJNodes/image"
 
     def image_grid(self, images):
         batch_size = images.shape[0]
@@ -70,7 +70,7 @@ class OneImageFromBatch:
 
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "execute"
-    CATEGORY = "XJNode/util"
+    CATEGORY = "XJNodes/util"
 
     def execute(self, image, index):
         if index < 1:
@@ -90,7 +90,7 @@ class XJImageListFilter:
         "removed_indices",
     )
     FUNCTION = "filter"
-    CATEGORY = "XJNode/image"
+    CATEGORY = "XJNodes/image"
     DESCRIPTION = "Removes empty images from a list"
     INPUT_IS_LIST = True
     OUTPUT_IS_LIST = (True, False)
@@ -160,7 +160,7 @@ class XJRandomImagesFromBatch:
 
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "select"
-    CATEGORY = "XJNode/image"
+    CATEGORY = "XJNodes/image"
     DESCRIPTION = "Select N images from a batch; `mandatory_list` is comma-separated 1-based indices."
 
     def select(self, images, count, mandatory_list="", exclude_list="", seed=0):

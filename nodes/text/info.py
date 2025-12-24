@@ -28,7 +28,7 @@ class XJTextFileInfo:
     RETURN_TYPES = ("INT", "STRING")
     RETURN_NAMES = ("line_count", "file_name")
     FUNCTION = "get_info"
-    CATEGORY = "XJNode/text"
+    CATEGORY = "XJNodes/text"
 
     def get_info(self, file_path):
         input_dir = folder_paths.get_input_directory()
