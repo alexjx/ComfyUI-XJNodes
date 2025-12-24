@@ -588,14 +588,318 @@ class XJImageNavigator {
     }
 }
 
+// Image Pair Compare Widget
+class XJImagePairCompareWidget {
+    constructor(name, node) {
+        this.name = name;
+        this.type = "custom";
+        this.node = node;
+        this.selectedPairIndex = 0;
+        this.imagesA = [];
+        this.imagesB = [];
+        this.pairCount = 0;
+        this.hitAreas = {};
+        this._value = { pairs: [] };
+        this.pointerOverPos = [0, 0];
+        this.isPointerOver = false;
+        this.isPointerDown = false;
+        // Store the actual Y position where we start drawing (set by ComfyUI)
+        this.startY = 0;
+    }
+
+    get value() {
+        return this._value;
+    }
+
+    set value(v) {
+        this._value = v || { pairs: [] };
+        this.loadImages();
+    }
+
+    setSelected(index) {
+        if (index < 0 || index >= this.pairCount) return;
+        this.selectedPairIndex = index;
+        this.loadSelectedImages();
+    }
+
+    loadImages() {
+        this.imagesA = [];
+        this.imagesB = [];
+        this.pairCount = Math.min(this._value.pairs.length, 100); // Sanity limit
+
+        for (let i = 0; i < this.pairCount; i++) {
+            const pair = this._value.pairs[i];
+            if (pair.a_url) {
+                const imgA = new Image();
+                imgA.onload = () => {
+                    if (this.node) {
+                        this.node.setDirtyCanvas(true, true);
+                    }
+                };
+                imgA.src = pair.a_url;
+                this.imagesA.push(imgA);
+            }
+            if (pair.b_url) {
+                const imgB = new Image();
+                imgB.onload = () => {
+                    if (this.node) {
+                        this.node.setDirtyCanvas(true, true);
+                    }
+                };
+                imgB.src = pair.b_url;
+                this.imagesB.push(imgB);
+            }
+        }
+    }
+
+    loadSelectedImages() {
+        const index = this.selectedPairIndex;
+        if (index < this.imagesA.length && !this.imagesA[index].complete) {
+            // Trigger reload if needed
+        }
+        if (index < this.imagesB.length && !this.imagesB[index].complete) {
+            // Trigger reload if needed
+        }
+    }
+
+    draw(ctx, node, width, y) {
+        this.hitAreas = {};
+        this.startY = y; // Store the starting Y position for click detection
+
+        // Draw numeric tabs if more than 1 pair
+        if (this.pairCount > 1) {
+            y = this.drawTabs(ctx, node, width, y);
+        }
+
+        // Draw images and size label
+        y = this.drawImages(ctx, node, width, y);
+
+        return y;
+    }
+
+    drawTabs(ctx, node, width, y) {
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.font = "14px Arial";
+
+        const tabHeight = 20;
+        const tabPadding = 8;  // Padding on each side of text
+        const spacing = 6;
+        const tabData = [];
+
+        // Measure all tabs first
+        let totalWidth = 0;
+        for (let i = 0; i < this.pairCount; i++) {
+            const text = (i + 1).toString();
+            const textWidth = ctx.measureText(text).width;
+            const tabWidth = textWidth + tabPadding * 2;
+            tabData.push({ index: i, text, width: tabWidth });
+            totalWidth += tabWidth + spacing;
+        }
+        totalWidth -= spacing; // Remove last spacing
+
+        // Center tabs - calculate starting x
+        let x = Math.max(5, (width - totalWidth) / 2);
+
+        // Draw tabs
+        for (const tab of tabData) {
+            const isSelected = tab.index === this.selectedPairIndex;
+
+            // Draw tab border only (no fill)
+            const radius = 4;
+            ctx.beginPath();
+            ctx.roundRect(x, y, tab.width, tabHeight, radius);
+
+            // Border color
+            if (isSelected) {
+                ctx.strokeStyle = "rgba(100, 150, 255, 1)";
+            } else {
+                ctx.strokeStyle = "rgba(150, 150, 150, 0.6)";
+            }
+            ctx.lineWidth = isSelected ? 2 : 1;
+            ctx.stroke();
+
+            // Draw text (offset down by 2px for better visual centering)
+            ctx.fillStyle = isSelected ? "rgba(100, 150, 255, 1)" : "rgba(180, 180, 180, 0.8)";
+            ctx.fillText(tab.text, x + tab.width / 2, y + tabHeight / 2 + 1);
+
+            // Store hit area for click detection
+            this.hitAreas[`tab_${tab.index}`] = {
+                bounds: [x, y, tab.width, tabHeight],
+                data: tab.index,
+            };
+
+            x += tab.width + spacing;
+        }
+
+        return y + tabHeight + 6;
+    }
+
+    drawImages(ctx, node, width, y) {
+        if (this.pairCount === 0) {
+            return y;
+        }
+
+        const imgA = this.imagesA[this.selectedPairIndex];
+        const imgB = this.imagesB[this.selectedPairIndex];
+
+        if (!imgA || !imgB || !imgA.complete || !imgB.complete) {
+            return y;
+        }
+
+        const imageA = imgA;
+        const imageB = imgB;
+
+        if (!imageA.naturalWidth || !imageA.naturalHeight) {
+            return y;
+        }
+
+        const mode = node.properties["comparer_mode"] || "Slide";
+        const [nodeWidth, nodeHeight] = node.size;
+        const availableHeight = nodeHeight - y - 35; // Reserve space for size label
+
+        // Calculate dimensions to fit (maintain aspect ratio)
+        const imageAspect = imageA.naturalWidth / imageA.naturalHeight;
+        const widgetAspect = nodeWidth / availableHeight;
+
+        let targetWidth, targetHeight;
+
+        if (imageAspect > widgetAspect) {
+            // Image is wider - fit to width
+            targetWidth = nodeWidth;
+            targetHeight = nodeWidth / imageAspect;
+        } else {
+            // Image is taller - fit to height
+            targetHeight = availableHeight;
+            targetWidth = availableHeight * imageAspect;
+        }
+
+        // Center the image
+        const destX = (nodeWidth - targetWidth) / 2;
+        const destY = y + (availableHeight - targetHeight) / 2;
+
+        // Draw image A (base image)
+        ctx.save();
+        ctx.drawImage(imageA, destX, destY, targetWidth, targetHeight);
+        ctx.restore();
+
+        // Draw image B (overlay)
+        if (mode === "Click") {
+            if (this.isPointerDown) {
+                ctx.save();
+                ctx.drawImage(imageB, destX, destY, targetWidth, targetHeight);
+                ctx.restore();
+            }
+        } else if (mode === "Slide" && this.isPointerOver) {
+            // Calculate crop position based on mouse
+            const cropX = this.pointerOverPos[0];
+
+            // Calculate source and destination dimensions for image B
+            // Only draw image B from cropX to the right edge
+            if (cropX > destX && cropX < destX + targetWidth) {
+                const sourceX = (cropX - destX) * (imageB.naturalWidth / targetWidth);
+                const sourceWidth = imageB.naturalWidth - sourceX;
+                const destWidth = targetWidth - (cropX - destX);
+
+                if (destWidth > 0 && sourceWidth > 0) {
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.rect(cropX, destY, destWidth, targetHeight);
+                    ctx.clip();
+                    ctx.drawImage(imageB, sourceX, 0, sourceWidth, imageB.naturalHeight, cropX, destY, destWidth, targetHeight);
+                    ctx.restore();
+
+                    // Draw divider line
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.moveTo(cropX, destY);
+                    ctx.lineTo(cropX, destY + targetHeight);
+                    ctx.globalCompositeOperation = "difference";
+                    ctx.strokeStyle = "rgba(255, 255, 255, 1)";
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
+        }
+
+        // Draw size label (same style as tabs)
+        ctx.save();
+        ctx.fillStyle = "rgba(180, 180, 180, 1)";
+        ctx.font = "14px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        const sizeText = `${imageA.naturalWidth} x ${imageA.naturalHeight}`;
+        ctx.fillText(sizeText, nodeWidth / 2, destY + targetHeight + 8);
+        ctx.restore();
+
+        return y;
+    }
+
+    onMouseMove(event, pos, node) {
+        this.pointerOverPos = [...pos];
+    }
+
+    onMouseEnter() {
+        this.isPointerOver = true;
+    }
+
+    onMouseLeave() {
+        this.isPointerOver = false;
+    }
+
+    setIsPointerDown(down) {
+        this.isPointerDown = down && app.canvas.pointer_is_down;
+    }
+
+    computeSize(width) {
+        // Base height for tabs + images + size label
+        const tabHeight = this.pairCount > 1 ? 20 : 0;
+        return [width, tabHeight + 250];
+    }
+
+    serializeValue(node, index) {
+        const v = [];
+        for (const pair of this._value.pairs) {
+            v.push({
+                a_url: pair.a_url,
+                b_url: pair.b_url,
+            });
+        }
+        return { pairs: v, selectedIndex: this.selectedPairIndex };
+    }
+
+    // Handle mouse events using widget's mouse() method (like rgthree)
+    // This receives pos in the correct coordinate space matching the draw() method
+    mouse(event, pos, node) {
+        if (event.type === "pointerdown") {
+            // Check if click is within any tab hit area
+            for (const [key, area] of Object.entries(this.hitAreas)) {
+                if (key.startsWith("tab_")) {
+                    const [bx, by, bw, bh] = area.bounds;
+
+                    // Check if click is within this tab's bounds
+                    if (pos[0] >= bx && pos[0] <= bx + bw &&
+                        pos[1] >= by && pos[1] <= by + bh) {
+                        this.setSelected(area.data);
+                        node.setDirtyCanvas(true, true);
+                        return true; // Event handled
+                    }
+                }
+            }
+        }
+
+        // Let other mouse handling continue
+        return false;
+    }
+}
+
 app.registerExtension({
     name: "Comfy.xjnodes",
 
     getCustomWidgets() {
         return {
             XJ_NUMBERED_LIST(node, inputName) {
-                console.log("Creating XJ_NUMBERED_LIST widget for:", inputName);
-
                 // Create container div
                 const container = document.createElement("div");
                 container.style.cssText = `
@@ -749,7 +1053,6 @@ app.registerExtension({
                     if (choiceWidget) {
                         const validLines = processTextList(textarea.value || "");
                         const maxValue = Math.max(1, validLines.length);
-                        console.log("Updating choice widget bounds:", maxValue, "valid lines:", validLines.length);
                         choiceWidget.options.max = maxValue;
                         if (choiceWidget.value > maxValue) {
                             choiceWidget.value = maxValue;
@@ -812,7 +1115,6 @@ app.registerExtension({
                         if (choiceWidget) {
                             const validLines = processTextList(v || "");
                             const maxValue = Math.max(1, validLines.length);
-                            console.log("setValue - Updating choice widget bounds:", maxValue, "valid lines:", validLines.length);
                             choiceWidget.options.max = maxValue;
                             if (choiceWidget.value > maxValue) {
                                 choiceWidget.value = maxValue;
@@ -841,7 +1143,6 @@ app.registerExtension({
                 if (choiceWidget) {
                     const validLines = processTextList(defaultValue);
                     const maxValue = Math.max(1, validLines.length);
-                    console.log("Initial choice widget bounds:", maxValue, "valid lines:", validLines.length);
                     choiceWidget.options.max = maxValue;
                     if (choiceWidget.value > maxValue) {
                         choiceWidget.value = maxValue;
@@ -852,8 +1153,6 @@ app.registerExtension({
                     // Force widget to update its UI
                     node.setDirtyCanvas(true);
                 }
-
-                console.log("XJ_NUMBERED_LIST widget created successfully");
 
                 return { widget };
             }
@@ -969,17 +1268,14 @@ app.registerExtension({
                     // This must happen BEFORE dummy() is called, otherwise the value gets rejected
                     if (this.widgets_values && this.widgets_values[2]) {
                         const savedImageValue = this.widgets_values[2];
-                        console.log("Found saved image value in widgets_values:", savedImageValue);
 
                         // Add the saved value to the combo options so it won't be rejected
                         if (!imageWidget.options.values.includes(savedImageValue)) {
                             imageWidget.options.values.push(savedImageValue);
-                            console.log("Added saved image to options.values");
                         }
 
                         // Set the value directly
                         imageWidget.value = savedImageValue;
-                        console.log("Set imageWidget.value to:", savedImageValue);
                     }
 
                     // Ensure the image widget properly serializes its value to the workflow
@@ -1001,18 +1297,13 @@ app.registerExtension({
 
                     // Function to create and show dropdown with subdirectories
                     const showSubdirectoryDropdown = async (currentPath, clickEvent) => {
-                        console.log("showSubdirectoryDropdown called with path:", currentPath);
-                        console.log("Click event received:", clickEvent);
                         const directory = directoryWidget.value;
 
                         // Clean current path: remove leading/trailing slashes
                         currentPath = (currentPath || "").trim().replace(/^\/+|\/+$/g, '');
 
-                        console.log("Fetching subdirectories for directory:", directory, "path:", currentPath);
-
                         try {
                             const response = await fetch(`/xjnodes/list_subdirectories?directory=${encodeURIComponent(directory)}&current_path=${encodeURIComponent(currentPath)}`);
-                            console.log("API response status:", response.status);
 
                             if (!response.ok) {
                                 console.error("Failed to fetch subdirectories, status:", response.status);
@@ -1020,7 +1311,6 @@ app.registerExtension({
                             }
 
                             const data = await response.json();
-                            console.log("API returned data:", data);
                             const subdirs = data.subdirectories || [];
 
                             // Close existing dropdown
@@ -1028,11 +1318,8 @@ app.registerExtension({
 
                             // Only skip showing dropdown if no subdirs AND at root (can't go up)
                             if (subdirs.length === 0 && !currentPath) {
-                                console.log("No subdirectories found and at root - nothing to show");
                                 return;
                             }
-
-                            console.log("Creating dropdown with", subdirs.length, "subdirectories");
 
                             // Create dropdown
                             subdirDropdown = document.createElement('div');
@@ -1050,7 +1337,6 @@ app.registerExtension({
                                 left: 100px;
                                 top: 100px;
                             `;
-                            console.log("Created dropdown element:", subdirDropdown);
 
                             // Add ".." parent directory option if not at root
                             if (currentPath) {
@@ -1150,14 +1436,12 @@ app.registerExtension({
                                 // Position relative to click location (bottom-right)
                                 x = clickEvent.clientX;
                                 y = clickEvent.clientY + 10; // 10px below click
-                                console.log("Positioning relative to click at:", clickEvent.clientX, clickEvent.clientY);
                             } else {
                                 // Fallback: center-left of screen
                                 const viewportWidth = window.innerWidth;
                                 const viewportHeight = window.innerHeight;
                                 x = Math.max(20, (viewportWidth - 300) / 4);
                                 y = Math.max(100, viewportHeight / 4);
-                                console.log("Using fallback positioning");
                             }
 
                             // Make sure dropdown stays within viewport
@@ -1178,8 +1462,6 @@ app.registerExtension({
 
                             subdirDropdown.style.left = x + 'px';
                             subdirDropdown.style.top = y + 'px';
-
-                            console.log("Dropdown positioned at:", x, y);
 
                         } catch (error) {
                             console.error("Error fetching subdirectories:", error);
@@ -1283,15 +1565,12 @@ app.registerExtension({
                         let subdirectory = (subdirectoryWidget.value || "").trim();
                         subdirectory = subdirectory.replace(/^\/+|\/+$/g, '');
 
-                        console.debug("updateImagePreview - directory:", directory, "subdirectory:", subdirectory, "filename:", filename);
-
                         // Clear current preview immediately
                         node.previewImage = null;
 
                         // Create image preview
                         const img = new Image();
                         img.onload = () => {
-                            console.debug("Image loaded successfully");
                             // Only set preview after successful load
                             if (img.complete && img.naturalWidth > 0) {
                                 node.previewImage = img;
@@ -1309,8 +1588,6 @@ app.registerExtension({
                         // Build API URL for image with preview optimization
                         const previewParams = app.getPreviewFormatParam ? app.getPreviewFormatParam() : '';
                         img.src = `/view?filename=${encodeURIComponent(filename)}&type=${directory}&subfolder=${encodeURIComponent(subdirectory)}${previewParams}&preview=true&channel=rgba&rand=${Math.random()}`;
-
-                        console.debug("Preview URL:", img.src);
                     };
 
                     // Function to update image list
@@ -1548,6 +1825,116 @@ app.registerExtension({
                     await updateImageList(true); // Preserve current values on refresh
                 }
             }
+        }
+
+        // Handle XJImagePairCompare node
+        if (nodeData.name === "XJImagePairCompare") {
+            const originalNodeCreated = nodeType.prototype.onNodeCreated;
+            const originalOnExecuted = nodeType.prototype.onExecuted;
+            const originalOnMouseDown = nodeType.prototype.onMouseDown;
+            const originalOnMouseMove = nodeType.prototype.onMouseMove;
+            const originalOnMouseEnter = nodeType.prototype.onMouseEnter;
+            const originalOnMouseLeave = nodeType.prototype.onMouseLeave;
+            const originalClick = nodeType.prototype.click;
+
+            nodeType.prototype.onNodeCreated = function () {
+                const result = originalNodeCreated?.apply(this, arguments);
+
+                // Add custom widget - ComfyUI will automatically call its draw method
+                this.pairCompareWidget = new XJImagePairCompareWidget("xj_pair_compare", this);
+                this.addCustomWidget(this.pairCompareWidget);
+
+                // Set default comparer_mode property
+                if (!this.properties["comparer_mode"]) {
+                    this.properties["comparer_mode"] = "Slide";
+                }
+
+                // Set initial node size
+                this.setSize([320, 300]);
+
+                return result;
+            };
+
+            nodeType.prototype.onExecuted = function (message) {
+                if (originalOnExecuted) {
+                    originalOnExecuted.apply(this, arguments);
+                }
+
+                // Try different possible locations for the image data
+                let aImages = message?.ui?.a_images || message?.a_images || [];
+                let bImages = message?.ui?.b_images || message?.b_images || [];
+
+                // Convert image data to URLs and create pairs
+                const previewParams = app.getPreviewFormatParam ? app.getPreviewFormatParam() : '';
+                const randParam = app.getRandParam ? app.getRandParam() : '';
+                const pairs = [];
+
+                for (let i = 0; i < aImages.length && i < bImages.length; i++) {
+                    const aData = aImages[i];
+                    const bData = bImages[i];
+
+                    const aUrl = `/view?filename=${encodeURIComponent(aData.filename)}&type=${aData.type}&subfolder=${encodeURIComponent(aData.subfolder || '')}${previewParams}${randParam}`;
+                    const bUrl = `/view?filename=${encodeURIComponent(bData.filename)}&type=${bData.type}&subfolder=${encodeURIComponent(bData.subfolder || '')}${previewParams}${randParam}`;
+
+                    pairs.push({
+                        a_url: aUrl,
+                        b_url: bUrl,
+                    });
+                }
+
+                // Update widget value
+                if (this.pairCompareWidget) {
+                    this.pairCompareWidget.value = { pairs, selectedIndex: 0 };
+                }
+
+                this.setDirtyCanvas(true, true);
+            };
+
+            // Tab clicks are now handled by the widget's mouse() method
+            // This matches the rgthree implementation pattern
+            nodeType.prototype.onMouseDown = function (event, pos, canvas) {
+                if (originalOnMouseDown) {
+                    return originalOnMouseDown.apply(this, arguments);
+                }
+                return false;
+            };
+
+            nodeType.prototype.onMouseMove = function (event, pos, canvas) {
+                if (this.pairCompareWidget) {
+                    this.pairCompareWidget.onMouseMove(event, pos, this);
+                    this.pairCompareWidget.setIsPointerDown(true);
+                    this.setDirtyCanvas(true, false);
+                }
+                if (originalOnMouseMove) {
+                    originalOnMouseMove.apply(this, arguments);
+                }
+            };
+
+            nodeType.prototype.onMouseEnter = function (event) {
+                if (this.pairCompareWidget) {
+                    this.pairCompareWidget.onMouseEnter();
+                }
+                if (originalOnMouseEnter) {
+                    originalOnMouseEnter.apply(this, arguments);
+                }
+            };
+
+            nodeType.prototype.onMouseLeave = function (event) {
+                if (this.pairCompareWidget) {
+                    this.pairCompareWidget.onMouseLeave();
+                    this.pairCompareWidget.setIsPointerDown(false);
+                }
+                if (originalOnMouseLeave) {
+                    originalOnMouseLeave.apply(this, arguments);
+                }
+            };
+
+            // Support for comparer_mode property
+            nodeData.prototype = nodeType.prototype;
+            nodeType.prototype["@comparer_mode"] = {
+                type: "combo",
+                values: ["Slide", "Click"],
+            };
         }
     }
 });
