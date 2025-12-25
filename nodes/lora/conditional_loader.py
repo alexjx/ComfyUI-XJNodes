@@ -29,9 +29,15 @@ class XJConditionalLoraLoader:
     def load_loras(self, model=None, enabled=True, **kwargs):
         """Loops over the provided loras in kwargs and applies them if enabled=True."""
         # If not enabled, just return the model unchanged
-        if not enabled or model is None:
+        if not enabled:
+            print("[XJConditionalLoraLoader] Disabled - no loras applied")
             return (model,)
 
+        if model is None:
+            print("[XJConditionalLoraLoader] No model provided, skipping")
+            return (model,)
+
+        applied_count = 0
         for key, value in kwargs.items():
             key_upper = key.upper()
 
@@ -46,14 +52,20 @@ class XJConditionalLoraLoader:
                     # Validate lora file exists
                     lora_list = folder_paths.get_filename_list("loras")
                     if lora_name not in lora_list:
-                        logger.warning(f"Lora '{lora_name}' not found, skipping")
+                        print(f"[XJConditionalLoraLoader] Lora '{lora_name}' not found, skipping")
                         continue
 
                     # Load the lora (model only, using official LoraLoaderModelOnly)
-                    model = LoraLoaderModelOnly().load_lora_model_only(
+                    print(f"[XJConditionalLoraLoader] Applying lora: {lora_name} (strength: {strength})")
+                    model, = LoraLoaderModelOnly().load_lora_model_only(
                         model, lora_name, strength
                     )
+                    applied_count += 1
 
+        if applied_count > 0:
+            print(f"[XJConditionalLoraLoader] Applied {applied_count} lora(s) to model")
+        else:
+            print(f"[XJConditionalLoraLoader] No loras applied (all set to 'None' or strength 0)")
         return (model,)
 
 

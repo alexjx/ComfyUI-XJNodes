@@ -1970,8 +1970,32 @@ app.registerExtension({
                 // Don't serialize the button
                 this.addLoraButton.serialize = false;
 
-                // Adjust node size
-                this.setSize([320, 120]);
+                // Restore saved state if loading from workflow
+                if (this._savedLoraWidgetValues) {
+                    // widgets_values format: [enabled, lora1_dict, lora2_dict, ...]
+                    // Skip first value (enabled toggle), then process dict values
+                    for (let i = 1; i < this._savedLoraWidgetValues.length; i++) {
+                        const loraData = this._savedLoraWidgetValues[i];
+
+                        // Check if this is a dict with lora and strength
+                        if (loraData && typeof loraData === 'object' && 'lora' in loraData && 'strength' in loraData) {
+                            // Add a new lora set (skipResize=true to preserve saved node size)
+                            const widgetSet = this.addLoraSet(true);
+
+                            // Restore the hidden data widget (this is what gets sent to backend)
+                            widgetSet.data.value = loraData;
+
+                            // Sync the display widgets from the data
+                            widgetSet.lora.value = loraData.lora;
+                            widgetSet.strength.value = loraData.strength;
+                        }
+                    }
+
+                    // Clear saved state after restoration
+                    delete this._savedLoraWidgetValues;
+                }
+
+                // Don't force size - let ComfyUI preserve it from saved workflow or auto-calculate
 
                 return result;
             };
@@ -2014,7 +2038,7 @@ app.registerExtension({
             };
 
             // Method to add a set of lora widgets
-            nodeType.prototype.addLoraSet = function() {
+            nodeType.prototype.addLoraSet = function(skipResize = false) {
                 this.loraCounter++;
                 const loraNum = this.loraCounter;
                 const loraKey = `lora_${loraNum}`;
@@ -2022,14 +2046,33 @@ app.registerExtension({
                 // Get list of available loras
                 const loraList = this.getLoraList();
 
-                // Create widgets for this lora (no enable toggle, just lora + strength)
-                const loraWidget = this.addWidget("combo", `LoRA ${loraNum}`, "None", () => {
+                // Create a hidden widget that stores the dict value
+                const dataWidget = this.addWidget("combo", loraKey, { lora: "None", strength: 1.0 }, null, { values: ["hidden"] });
+                dataWidget.type = "converted-widget"; // Hide from UI
+                dataWidget.computeSize = () => [0, -4]; // Make it invisible
+
+                // Create visible UI widgets
+                const loraWidget = this.addWidget("combo", `${loraKey}_display`, "None", (value) => {
+                    // Update the hidden data widget when lora changes
+                    dataWidget.value = {
+                        lora: value,
+                        strength: strengthWidget.value
+                    };
                     this.setDirtyCanvas(true);
                 }, { values: loraList });
+                loraWidget.label = `LoRA ${loraNum}`;
+                loraWidget.serialize = false; // Don't serialize display widget
 
-                const strengthWidget = this.addWidget("number", `Strength ${loraNum}`, 1.0, () => {
+                const strengthWidget = this.addWidget("number", `${loraKey}_strength_display`, 1.0, (value) => {
+                    // Update the hidden data widget when strength changes
+                    dataWidget.value = {
+                        lora: loraWidget.value,
+                        strength: value
+                    };
                     this.setDirtyCanvas(true);
                 }, { min: -10.0, max: 10.0, step: 0.01, precision: 2 });
+                strengthWidget.label = `Strength ${loraNum}`;
+                strengthWidget.serialize = false; // Don't serialize display widget
 
                 const removeButton = this.addWidget("button", `🗑️ Remove`, null, () => {
                     this.removeLoraSet(loraNum);
@@ -2040,8 +2083,9 @@ app.registerExtension({
                 const widgetSet = {
                     id: loraNum,
                     key: loraKey,
-                    lora: loraWidget,
-                    strength: strengthWidget,
+                    data: dataWidget,      // Hidden widget with dict value (serialized, sent to backend)
+                    lora: loraWidget,      // Display widget for lora selection
+                    strength: strengthWidget, // Display widget for strength
                     remove: removeButton
                 };
 
@@ -2054,9 +2098,11 @@ app.registerExtension({
                     this.widgets.push(this.addLoraButton);
                 }
 
-                // Resize node to fit all widgets
-                const newHeight = Math.max(120, 50 + this.widgets.length * 25);
-                this.setSize([320, newHeight]);
+                // Resize node to fit all widgets (only if not restoring from saved workflow)
+                if (!skipResize) {
+                    const newHeight = Math.max(120, 50 + this.widgets.length * 25);
+                    this.setSize([320, newHeight]);
+                }
 
                 return widgetSet;
             };
@@ -2066,8 +2112,9 @@ app.registerExtension({
                 const widgetSet = this.loraWidgets.find(w => w.id === loraNum);
                 if (!widgetSet) return;
 
-                // Remove all widgets in this set
+                // Remove all widgets in this set (including hidden data widget)
                 const widgetsToRemove = [
+                    widgetSet.data,
                     widgetSet.lora,
                     widgetSet.strength,
                     widgetSet.remove
@@ -2124,37 +2171,10 @@ app.registerExtension({
                     originalOnConfigure.apply(this, arguments);
                 }
 
-                // Restore lora widgets from saved workflow
+                // Save widget values for restoration in onNodeCreated
+                // onConfigure is called BEFORE onNodeCreated, so we can't restore state here
                 if (info.widgets_values) {
-                    // Clear existing lora widgets (but keep the button)
-                    this.loraWidgets = [];
-
-                    // Scan through widgets_values to find lora data
-                    // widgets_values format: [serialized widget values...]
-                    // We need to restore any lora widgets that were saved
-                    for (let i = 0; i < this.widgets.length; i++) {
-                        const widget = this.widgets[i];
-                        if (widget.name.startsWith("LoRA ")) {
-                            // Found a lora widget - extract its number
-                            const match = widget.name.match(/LoRA (\d+)/);
-                            if (match) {
-                                const loraNum = parseInt(match[1]);
-                                const strengthWidget = this.widgets[i + 1];
-                                const removeButton = this.widgets[i + 2];
-
-                                // Store widget set
-                                const widgetSet = {
-                                    id: loraNum,
-                                    key: `lora_${loraNum}`,
-                                    lora: widget,
-                                    strength: strengthWidget,
-                                    remove: removeButton
-                                };
-                                this.loraWidgets.push(widgetSet);
-                                this.loraCounter = Math.max(this.loraCounter, loraNum);
-                            }
-                        }
-                    }
+                    this._savedLoraWidgetValues = info.widgets_values;
                 }
             };
         }
