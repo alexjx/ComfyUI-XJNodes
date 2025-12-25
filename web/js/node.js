@@ -829,7 +829,17 @@ class XJImagePairCompareWidget {
         ctx.font = "14px Arial";
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        const sizeText = `${imageA.naturalWidth} x ${imageA.naturalHeight}`;
+
+        // Show different format based on whether images have same size
+        let sizeText;
+        if (imageA.naturalWidth === imageB.naturalWidth && imageA.naturalHeight === imageB.naturalHeight) {
+            // Same size - show single format
+            sizeText = `${imageA.naturalWidth} x ${imageA.naturalHeight}`;
+        } else {
+            // Different sizes - show both
+            sizeText = `${imageA.naturalWidth} x ${imageA.naturalHeight} | ${imageB.naturalWidth} x ${imageB.naturalHeight}`;
+        }
+
         ctx.fillText(sizeText, nodeWidth / 2, destY + targetHeight + 8);
         ctx.restore();
 
