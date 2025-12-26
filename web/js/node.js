@@ -1945,6 +1945,39 @@ app.registerExtension({
                 type: "combo",
                 values: ["Slide", "Click"],
             };
+
+            // Add context menu for opening images
+            const originalGetExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
+            nodeType.prototype.getExtraMenuOptions = function(_, options) {
+                if (originalGetExtraMenuOptions) {
+                    originalGetExtraMenuOptions.apply(this, arguments);
+                }
+
+                // Add "Open image" options for current pair
+                if (this.pairCompareWidget && this.pairCompareWidget.pairCount > 0) {
+                    const selectedIndex = this.pairCompareWidget.selectedPairIndex;
+                    const pairs = this.pairCompareWidget._value.pairs;
+
+                    if (pairs && pairs[selectedIndex]) {
+                        const pair = pairs[selectedIndex];
+
+                        options.unshift(
+                            {
+                                content: "Open Image A",
+                                callback: () => {
+                                    window.open(pair.a_url, "_blank");
+                                }
+                            },
+                            {
+                                content: "Open Image B",
+                                callback: () => {
+                                    window.open(pair.b_url, "_blank");
+                                }
+                            }
+                        );
+                    }
+                }
+            };
         }
 
         // Handle XJConditionalLoraLoader node
