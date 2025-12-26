@@ -7,6 +7,7 @@ This package contains custom nodes organized by data type:
 - primitives: Basic data type operations (adapters, integers, floats)
 - lora: Lora loading nodes (conditional loader)
 - specialized: Special-purpose nodes (SUPIR helpers)
+- segs: Segmentation nodes (query, filter, decompose, compose)
 """
 
 from .image import NODE_CLASS_MAPPINGS as IMAGE_MAPPINGS
@@ -19,6 +20,8 @@ from .lora import NODE_CLASS_MAPPINGS as LORA_MAPPINGS
 from .lora import NODE_DISPLAY_NAME_MAPPINGS as LORA_DISPLAY_MAPPINGS
 from .specialized import NODE_CLASS_MAPPINGS as SPECIALIZED_MAPPINGS
 from .specialized import NODE_DISPLAY_NAME_MAPPINGS as SPECIALIZED_DISPLAY_MAPPINGS
+from .segs import NODE_CLASS_MAPPINGS as SEGS_MAPPINGS
+from .segs import NODE_DISPLAY_NAME_MAPPINGS as SEGS_DISPLAY_MAPPINGS
 
 # Aggregate all node class mappings
 NODE_CLASS_MAPPINGS = {}
@@ -27,6 +30,7 @@ NODE_CLASS_MAPPINGS.update(TEXT_MAPPINGS)
 NODE_CLASS_MAPPINGS.update(PRIMITIVES_MAPPINGS)
 NODE_CLASS_MAPPINGS.update(LORA_MAPPINGS)
 NODE_CLASS_MAPPINGS.update(SPECIALIZED_MAPPINGS)
+NODE_CLASS_MAPPINGS.update(SEGS_MAPPINGS)
 
 # Aggregate all display name mappings
 NODE_DISPLAY_NAME_MAPPINGS = {}
@@ -35,5 +39,6 @@ NODE_DISPLAY_NAME_MAPPINGS.update(TEXT_DISPLAY_MAPPINGS)
 NODE_DISPLAY_NAME_MAPPINGS.update(PRIMITIVES_DISPLAY_MAPPINGS)
 NODE_DISPLAY_NAME_MAPPINGS.update(LORA_DISPLAY_MAPPINGS)
 NODE_DISPLAY_NAME_MAPPINGS.update(SPECIALIZED_DISPLAY_MAPPINGS)
+NODE_DISPLAY_NAME_MAPPINGS.update(SEGS_DISPLAY_MAPPINGS)
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
