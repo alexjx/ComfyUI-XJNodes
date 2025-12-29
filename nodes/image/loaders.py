@@ -333,7 +333,6 @@ class XJLoadImageWithMetadata:
     CATEGORY = "XJNodes/image"
     RETURN_TYPES = (
         "IMAGE",
-        "MASK",
         "STRING",
         "STRING",
         "INT",
@@ -343,7 +342,6 @@ class XJLoadImageWithMetadata:
     )
     RETURN_NAMES = (
         "image",
-        "mask",
         "file_path",
         "file_name",
         "width",
@@ -377,7 +375,6 @@ class XJLoadImageWithMetadata:
         img = node_helpers.pillow(Image.open, image_path)
 
         output_images = []
-        output_masks = []
         w, h = None, None
 
         excluded_formats = ["MPO"]
@@ -399,27 +396,12 @@ class XJLoadImageWithMetadata:
             image_array = np.array(image_converted).astype(np.float32) / 255.0
             image_tensor = torch.from_numpy(image_array)[None,]
 
-            if "A" in i.getbands():
-                mask = np.array(i.getchannel("A")).astype(np.float32) / 255.0
-                mask = 1.0 - torch.from_numpy(mask)
-            elif i.mode == "P" and "transparency" in i.info:
-                mask = (
-                    np.array(i.convert("RGBA").getchannel("A")).astype(np.float32)
-                    / 255.0
-                )
-                mask = 1.0 - torch.from_numpy(mask)
-            else:
-                mask = torch.zeros((64, 64), dtype=torch.float32, device="cpu")
-
             output_images.append(image_tensor)
-            output_masks.append(mask.unsqueeze(0))
 
         if len(output_images) > 1 and img.format not in excluded_formats:
             output_image = torch.cat(output_images, dim=0)
-            output_mask = torch.cat(output_masks, dim=0)
         else:
             output_image = output_images[0]
-            output_mask = output_masks[0]
 
         # Get metadata
         file_name = os.path.basename(image_path)
@@ -437,7 +419,6 @@ class XJLoadImageWithMetadata:
 
         return (
             output_image,
-            output_mask,
             image_path,
             file_name,
             width,
