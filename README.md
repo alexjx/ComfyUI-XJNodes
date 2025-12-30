@@ -137,8 +137,25 @@ This package provides custom nodes organized into four main categories:
   - Decrement integer by a value
 
 **Floats:**
-- **Float Range List** 
+- **Float Range List**
   - Generate a list of float values within a range
+
+**Lists:**
+- **Empty Image List** - Create an empty list for accumulation
+- **Append to Image List** - Add images to a list (handles batch tensors)
+- **Get Image from List** - Extract single image by index
+- **Image List Slice** - Extract range of images
+- **Image List Length** - Get list size
+- **Wrap as List** / **Unwrap from List** - Convert between single values and lists
+
+### Flow Control
+
+**Loop System:**
+- **Loop Start** / **Loop End**
+  - Index-based iteration with up to 20 value slots
+  - **Featured: Preserves lists as-is** - No auto-expansion, lists stay intact through iterations
+  - Supports image list accumulation patterns
+  - See [docs/loop-system.md](docs/loop-system.md) for implementation details
 
 ### Specialized
 

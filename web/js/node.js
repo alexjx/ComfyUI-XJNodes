@@ -904,6 +904,15 @@ class XJImagePairCompareWidget {
     }
 }
 
+// Helper function to update node height after modifying widgets/inputs/outputs
+function updateNodeHeight(node) {
+    setTimeout(() => {
+        const size = node.computeSize();
+        node.setSize(size);
+        app.graph.setDirtyCanvas(true, true);
+    }, 10);
+}
+
 app.registerExtension({
     name: "Comfy.xjnodes",
 
@@ -2209,6 +2218,232 @@ app.registerExtension({
                 if (info.widgets_values) {
                     this._savedLoraWidgetValues = info.widgets_values;
                 }
+            };
+        }
+
+        // Handle XJLoopStart and XJLoopEnd nodes - dynamic input/output slots
+        if (nodeData.name === "XJLoopStart" || nodeData.name === "XJLoopEnd") {
+            const originalNodeCreated = nodeType.prototype.onNodeCreated;
+            const originalOnConnectionsChange = nodeType.prototype.onConnectionsChange;
+
+            nodeType.prototype.onNodeCreated = function() {
+                const result = originalNodeCreated?.apply(this, arguments);
+
+                // Keep initial slots visible so users can connect to them
+                // XJLoopStart: Keep value1 input (index 0) visible
+                // XJLoopEnd: Keep flow input (index 0) and value1 input (index 1) visible
+                const keepInputs = (input, index) => {
+                    if (input.widget) return true; // Always keep widget inputs
+                    if (nodeData.name === "XJLoopStart") {
+                        // Keep value1 (first input, index 0)
+                        return input.name === 'value1';
+                    } else {
+                        // Keep flow and value1
+                        return input.name === 'flow' || input.name === 'value1';
+                    }
+                };
+
+                // XJLoopStart outputs: Keep flow, index, and value1
+                // XJLoopEnd outputs: Keep value1
+                const keepOutputs = (output, index) => {
+                    if (nodeData.name === "XJLoopStart") {
+                        // Keep flow, index, and value1
+                        return output.name === 'flow' || output.name === 'index' || output.name === 'value1';
+                    } else {
+                        // Keep value1
+                        return output.name === 'value1';
+                    }
+                };
+
+                // Filter to keep only initial slots
+                this.inputs = this.inputs.filter(keepInputs);
+                this.outputs = this.outputs.filter(keepOutputs);
+
+                // Style the flow control connections with a special shape (pentagon)
+                if (nodeData.name === "XJLoopStart") {
+                    const flowOutput = this.outputs.find(o => o.name === "flow");
+                    if (flowOutput) {
+                        flowOutput.shape = 5; // Pentagon shape for flow control
+                    }
+                } else if (nodeData.name === "XJLoopEnd") {
+                    const flowInput = this.inputs.find(i => i.name === "flow");
+                    if (flowInput) {
+                        flowInput.shape = 5; // Pentagon shape for flow control
+                    }
+                }
+
+                // Update node height
+                updateNodeHeight(this);
+
+                return result;
+            };
+
+            nodeType.prototype.onConnectionsChange = function(type, index, connected, link_info) {
+                if (originalOnConnectionsChange) {
+                    originalOnConnectionsChange.apply(this, arguments);
+                }
+
+                if (!link_info) return;
+
+                // Only handle input connections (type == 1)
+                if (type === 1) {
+                    // Get list of value inputs (exclude fixed inputs like flow)
+                    const valueInputs = this.inputs.filter(input =>
+                        input.name && input.name.startsWith('value')
+                    );
+
+                    // Check if all current inputs are connected
+                    const isAllConnected = this.inputs.every(input =>
+                        input.link !== null || input.widget || input.name === 'flow'
+                    );
+
+                    if (isAllConnected && connected) {
+                        // All inputs connected - add next value slot
+                        if (valueInputs.length >= 20) {
+                            console.warn("[XJNodes] Maximum 20 value slots reached");
+                            return;
+                        }
+
+                        // Find next value number
+                        let nextNum = 1;
+                        if (valueInputs.length > 0) {
+                            // Find the highest existing number
+                            const numbers = valueInputs.map(input =>
+                                parseInt(input.name.replace('value', ''))
+                            ).filter(n => !isNaN(n));
+
+                            if (numbers.length > 0) {
+                                nextNum = Math.max(...numbers) + 1;
+                            }
+                        }
+
+                        // Check if slot already exists (shouldn't happen, but safety check)
+                        if (this.inputs.find(input => input.name === `value${nextNum}`)) {
+                            return;
+                        }
+
+                        // Add new slot
+                        this.addInput(`value${nextNum}`, '*');
+                        this.addOutput(`value${nextNum}`, '*');
+
+                        console.log(`[XJNodes] Added value${nextNum} slot`);
+                        updateNodeHeight(this);
+
+                    } else if (!connected) {
+                        // Input disconnected - remove last empty slot if it exists
+                        const disconnectedInput = this.inputs[index];
+
+                        // Only proceed if we disconnected a value input
+                        if (!disconnectedInput || !disconnectedInput.name.startsWith('value')) {
+                            return;
+                        }
+
+                        // Find the last input with a connection
+                        const lastConnectedIndex = this.inputs.findLastIndex(input =>
+                            input.link !== null
+                        );
+
+                        // Only remove trailing slots (after the last connected one)
+                        if (index >= lastConnectedIndex) {
+                            // Find highest numbered value slot
+                            const numbers = valueInputs.map(input =>
+                                parseInt(input.name.replace('value', ''))
+                            ).filter(n => !isNaN(n));
+
+                            if (numbers.length > 0) {
+                                const highestNum = Math.max(...numbers);
+
+                                // Remove the highest numbered slot if it's not connected
+                                const highestInput = this.inputs.find(i => i.name === `value${highestNum}`);
+                                if (highestInput && !highestInput.link) {
+                                    const inputIdx = this.inputs.indexOf(highestInput);
+                                    const outputIdx = this.outputs.findIndex(o => o.name === `value${highestNum}`);
+
+                                    if (inputIdx !== -1) {
+                                        this.removeInput(inputIdx);
+                                    }
+                                    if (outputIdx !== -1) {
+                                        this.removeOutput(outputIdx);
+                                    }
+
+                                    console.log(`[XJNodes] Removed value${highestNum} slot`);
+                                    updateNodeHeight(this);
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+        }
+
+        // Handle XJWrapAsList and XJUnwrapFromList - dynamic type inference
+        if (nodeData.name === "XJWrapAsList") {
+            const originalNodeCreated = nodeType.prototype.onNodeCreated;
+
+            nodeType.prototype.onNodeCreated = function() {
+                const result = originalNodeCreated?.apply(this, arguments);
+
+                // Override onConnectionsChange to update output type based on input
+                const originalOnConnectionsChange = this.onConnectionsChange;
+                this.onConnectionsChange = function(type, index, connected, link_info) {
+                    if (originalOnConnectionsChange) {
+                        originalOnConnectionsChange.apply(this, arguments);
+                    }
+
+                    // When input is connected, update output type to match
+                    if (type === 1 && connected && link_info) { // type 1 = input
+                        const sourceNode = app.graph.getNodeById(link_info.origin_id);
+                        if (sourceNode && sourceNode.outputs && sourceNode.outputs[link_info.origin_slot]) {
+                            const inputType = sourceNode.outputs[link_info.origin_slot].type;
+                            // Update output type to match input
+                            if (this.outputs && this.outputs[0]) {
+                                this.outputs[0].type = inputType;
+                            }
+                        }
+                    } else if (type === 1 && !connected) { // Input disconnected
+                        // Reset to wildcard
+                        if (this.outputs && this.outputs[0]) {
+                            this.outputs[0].type = "*";
+                        }
+                    }
+                };
+
+                return result;
+            };
+        }
+
+        if (nodeData.name === "XJUnwrapFromList") {
+            const originalNodeCreated = nodeType.prototype.onNodeCreated;
+
+            nodeType.prototype.onNodeCreated = function() {
+                const result = originalNodeCreated?.apply(this, arguments);
+
+                // Override onConnectionsChange to update output type based on input
+                const originalOnConnectionsChange = this.onConnectionsChange;
+                this.onConnectionsChange = function(type, index, connected, link_info) {
+                    if (originalOnConnectionsChange) {
+                        originalOnConnectionsChange.apply(this, arguments);
+                    }
+
+                    // When input is connected, update output type to match
+                    if (type === 1 && connected && link_info) { // type 1 = input
+                        const sourceNode = app.graph.getNodeById(link_info.origin_id);
+                        if (sourceNode && sourceNode.outputs && sourceNode.outputs[link_info.origin_slot]) {
+                            const inputType = sourceNode.outputs[link_info.origin_slot].type;
+                            // Update output type to match input (unwrap preserves type)
+                            if (this.outputs && this.outputs[0]) {
+                                this.outputs[0].type = inputType;
+                            }
+                        }
+                    } else if (type === 1 && !connected) { // Input disconnected
+                        // Reset to wildcard
+                        if (this.outputs && this.outputs[0]) {
+                            this.outputs[0].type = "*";
+                        }
+                    }
+                };
+
+                return result;
             };
         }
     }

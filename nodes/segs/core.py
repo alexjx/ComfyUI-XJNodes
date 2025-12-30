@@ -3,6 +3,8 @@ Core SEGS data structures and utilities.
 """
 
 from collections import namedtuple
+import numpy as np
+import torch
 
 # SEG: Individual segment element
 SEG = namedtuple(
@@ -42,11 +44,53 @@ def get_segs_shape(segs):
     return segs[0]
 
 
+def is_valid_seg(seg):
+    """
+    Check if a SEG is valid (has non-empty mask and valid bbox).
+
+    Invalid SEGs have:
+    - Empty masks: tensor/array with 0 elements
+    - Invalid bbox: coordinates where start >= end
+    """
+    # Check if mask is empty
+    if seg.cropped_mask is None:
+        return False
+
+    # Handle different mask types
+    if isinstance(seg.cropped_mask, torch.Tensor):
+        if seg.cropped_mask.numel() == 0:
+            return False
+    elif isinstance(seg.cropped_mask, np.ndarray):
+        if seg.cropped_mask.size == 0:
+            return False
+    else:
+        # PIL Image or other types - check if it has size attribute
+        try:
+            if hasattr(seg.cropped_mask, 'size'):
+                # PIL Image size is (width, height)
+                width, height = seg.cropped_mask.size
+                if width == 0 or height == 0:
+                    return False
+            else:
+                # Unknown type, consider invalid
+                return False
+        except:
+            return False
+
+    # Check bbox validity: x1 < x2 and y1 < y2
+    if seg.bbox is not None and len(seg.bbox) >= 4:
+        x1, y1, x2, y2 = seg.bbox[:4]
+        if x1 >= x2 or y1 >= y2:
+            return False
+
+    return True
+
+
 def get_segs_list(segs):
-    """Get the list of SEG elements from SEGS."""
-    return segs[1]
+    """Get the list of valid SEG elements from SEGS (filters out invalid/empty SEGs)."""
+    return [seg for seg in segs[1] if is_valid_seg(seg)]
 
 
 def count_segs(segs):
-    """Count the number of segments in SEGS."""
-    return len(segs[1])
+    """Count the number of valid segments in SEGS (excludes invalid/empty SEGs)."""
+    return len(get_segs_list(segs))
