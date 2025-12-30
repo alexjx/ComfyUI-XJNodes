@@ -26,12 +26,6 @@ class XJSegsStitcher:
                     {"default": 5, "min": 0, "max": 100, "step": 1},
                 ),
             },
-            "optional": {
-                "check_ratio": (
-                    "BOOLEAN",
-                    {"default": True, "label_on": "enabled", "label_off": "disabled"},
-                ),
-            },
         }
 
     RETURN_TYPES = ("IMAGE",)
@@ -39,7 +33,7 @@ class XJSegsStitcher:
     CATEGORY = "XJNodes/segs"
     FUNCTION = "stitch"
 
-    def stitch(self, original_image, processed_image, seg, feather_pixels, check_ratio=True):
+    def stitch(self, original_image, processed_image, seg, feather_pixels):
         """
         Stitch processed image back into original image with feathering.
 
@@ -48,7 +42,6 @@ class XJSegsStitcher:
             processed_image: Processed cropped image (B, H', W', C)
             seg: SEG containing mask and crop region
             feather_pixels: Number of pixels to feather at edges
-            check_ratio: Validate aspect ratio before stitching
 
         Returns:
             Stitched image
@@ -56,27 +49,6 @@ class XJSegsStitcher:
         # Extract mask and coordinates from SEG
         mask = seg.cropped_mask
         x1, y1, x2, y2 = seg.crop_region
-
-        # Calculate expected dimensions from crop_region
-        expected_h = y2 - y1
-        expected_w = x2 - x1
-
-        # Validate aspect ratio if dimensions changed
-        if check_ratio and expected_h > 0 and expected_w > 0:
-            actual_h, actual_w = processed_image.shape[1:3]
-
-            if (actual_h != expected_h or actual_w != expected_w):
-                expected_ratio = expected_w / expected_h
-                actual_ratio = actual_w / actual_h
-                tolerance = 0.01  # 1% tolerance for floating point
-
-                if abs(expected_ratio - actual_ratio) > tolerance:
-                    raise ValueError(
-                        f"Aspect ratio mismatch: "
-                        f"expected {expected_ratio:.3f} (from crop_region {expected_w}x{expected_h}), "
-                        f"got {actual_ratio:.3f} (from processed image {actual_w}x{actual_h}). "
-                        f"Cannot safely resize - the image was likely cropped or incorrectly resized."
-                    )
 
         # Convert mask to torch if needed
         if isinstance(mask, Image.Image):
