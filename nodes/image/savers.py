@@ -212,7 +212,10 @@ class XJSaveImageWithMetadata:
                 while os.path.exists(file_path):
                     counter += 1
                     counter_str = str(counter).zfill(number_padding)
-                    if filename_mode == "number_only" or filename_mode == "number_prefix":
+                    if (
+                        filename_mode == "number_only"
+                        or filename_mode == "number_prefix"
+                    ):
                         file = f"{counter_str}{filename_delimiter}{filename_with_batch_num}.{extension}"
                     else:  # prefix_number
                         file = f"{filename_with_batch_num}{filename_delimiter}{counter_str}.{extension}"

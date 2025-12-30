@@ -120,7 +120,9 @@ class XJLoopStart:
         ("flow", "index") + tuple(f"value{i}" for i in range(1, MAX_FLOW_NUM + 1))
     )
     INPUT_IS_LIST = True
-    OUTPUT_IS_LIST = (False, False) + (True,) * MAX_FLOW_NUM  # flow/index are singles, values are lists
+    OUTPUT_IS_LIST = (False, False) + (
+        True,
+    ) * MAX_FLOW_NUM  # flow/index are singles, values are lists
     FUNCTION = "start_loop"
     CATEGORY = "XJNodes/Flow"
 
@@ -409,7 +411,9 @@ class XJLoopEnd(LoopBase):
         expanded_graph = graph.finalize()
 
         return {
-            "result": tuple(result),  # Links resolve to double-wrapped values from recursed node
+            "result": tuple(
+                result
+            ),  # Links resolve to double-wrapped values from recursed node
             "expand": expanded_graph,
         }
 

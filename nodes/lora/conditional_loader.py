@@ -15,10 +15,13 @@ class XJConditionalLoraLoader:
     def INPUT_TYPES(cls):
         return {
             "required": {},
-            "optional": FlexibleOptionalInputType(type=any_type, data={
-                "model": ("MODEL",),
-                "enabled": ("BOOLEAN", {"default": True}),
-            }),
+            "optional": FlexibleOptionalInputType(
+                type=any_type,
+                data={
+                    "model": ("MODEL",),
+                    "enabled": ("BOOLEAN", {"default": True}),
+                },
+            ),
         }
 
     RETURN_TYPES = ("MODEL",)
@@ -42,22 +45,26 @@ class XJConditionalLoraLoader:
             key_upper = key.upper()
 
             # Look for lora inputs: lora_1, lora_2, etc.
-            if key_upper.startswith('LORA_') and isinstance(value, dict):
+            if key_upper.startswith("LORA_") and isinstance(value, dict):
                 # Extract values with defaults
-                lora_name = value.get('lora', None)
-                strength = value.get('strength', 1.0)
+                lora_name = value.get("lora", None)
+                strength = value.get("strength", 1.0)
 
                 # Apply lora if valid
-                if lora_name and lora_name != 'None' and strength != 0:
+                if lora_name and lora_name != "None" and strength != 0:
                     # Validate lora file exists
                     lora_list = folder_paths.get_filename_list("loras")
                     if lora_name not in lora_list:
-                        print(f"[XJConditionalLoraLoader] Lora '{lora_name}' not found, skipping")
+                        print(
+                            f"[XJConditionalLoraLoader] Lora '{lora_name}' not found, skipping"
+                        )
                         continue
 
                     # Load the lora (model only, using official LoraLoaderModelOnly)
-                    print(f"[XJConditionalLoraLoader] Applying lora: {lora_name} (strength: {strength})")
-                    model, = LoraLoaderModelOnly().load_lora_model_only(
+                    print(
+                        f"[XJConditionalLoraLoader] Applying lora: {lora_name} (strength: {strength})"
+                    )
+                    (model,) = LoraLoaderModelOnly().load_lora_model_only(
                         model, lora_name, strength
                     )
                     applied_count += 1
@@ -65,7 +72,9 @@ class XJConditionalLoraLoader:
         if applied_count > 0:
             print(f"[XJConditionalLoraLoader] Applied {applied_count} lora(s) to model")
         else:
-            print(f"[XJConditionalLoraLoader] No loras applied (all set to 'None' or strength 0)")
+            print(
+                f"[XJConditionalLoraLoader] No loras applied (all set to 'None' or strength 0)"
+            )
         return (model,)
 
 

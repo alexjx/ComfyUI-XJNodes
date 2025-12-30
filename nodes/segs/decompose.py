@@ -24,7 +24,7 @@ class XJSegsExtractor:
             },
             "optional": {
                 "image": ("IMAGE",),
-            }
+            },
         }
 
     RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT", "INT", "INT", "STRING", "FLOAT")

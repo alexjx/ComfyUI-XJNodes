@@ -11,10 +11,13 @@ import torch
 # Generic type that accepts anything
 class AlwaysEqualProxy(str):
     """Type wildcard that matches any type"""
+
     def __eq__(self, _):
         return True
+
     def __ne__(self, _):
         return False
+
 
 any_type = AlwaysEqualProxy("*")
 
@@ -120,6 +123,7 @@ class XJAppendImageList:
 
         return (image_list,)
 
+
 class XJImageListLength:
     """
     Returns the number of images in an image list.
@@ -168,7 +172,10 @@ class XJGetImageFromList:
         return {
             "required": {
                 "image_list": ("IMAGE",),
-                "index": ("INT", {"default": 0, "min": -10000, "max": 10000, "step": 1}),
+                "index": (
+                    "INT",
+                    {"default": 0, "min": -10000, "max": 10000, "step": 1},
+                ),
             },
         }
 
@@ -208,7 +215,9 @@ class XJGetImageFromList:
         # Python list indexing handles negative indices automatically
         # Just do bounds check
         if index < -len(image_list) or index >= len(image_list):
-            raise ValueError(f"Index {index} out of range for list of size {len(image_list)}")
+            raise ValueError(
+                f"Index {index} out of range for list of size {len(image_list)}"
+            )
 
         # Return the image at the index
         return (image_list[index],)
@@ -277,9 +286,13 @@ class XJImageListSlice:
 
         # Bounds check
         if start < 0 or start >= len(image_list):
-            raise ValueError(f"Start index {start} out of range for list of size {len(image_list)}")
+            raise ValueError(
+                f"Start index {start} out of range for list of size {len(image_list)}"
+            )
         if end < start or end > len(image_list):
-            raise ValueError(f"End index {end} invalid for list of size {len(image_list)}")
+            raise ValueError(
+                f"End index {end} invalid for list of size {len(image_list)}"
+            )
 
         return (image_list[start:end],)
 

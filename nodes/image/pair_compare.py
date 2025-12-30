@@ -27,19 +27,17 @@ class XJImagePairCompare(nodes.PreviewImage):
                 "images_a": ("IMAGE",),
                 "images_b": ("IMAGE",),
             },
-            "hidden": {
-                "prompt": "PROMPT",
-                "extra_pnginfo": "EXTRA_PNGINFO"
-            },
+            "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
 
-    def compare_pairs(self,
-                     images_a=None,
-                     images_b=None,
-                     filename_prefix="xj.compare.",
-                     prompt=None,
-                     extra_pnginfo=None):
-
+    def compare_pairs(
+        self,
+        images_a=None,
+        images_b=None,
+        filename_prefix="xj.compare.",
+        prompt=None,
+        extra_pnginfo=None,
+    ):
         # Validate: both inputs must have same count
         count_a = len(images_a) if images_a is not None else 0
         count_b = len(images_b) if images_b is not None else 0
@@ -57,10 +55,14 @@ class XJImagePairCompare(nodes.PreviewImage):
 
         result = {"ui": {"a_images": [], "b_images": []}}
         if images_a is not None and len(images_a) > 0:
-            result['ui']['a_images'] = self.save_images(images_a, filename_prefix, prompt, extra_pnginfo)['ui']['images']
+            result["ui"]["a_images"] = self.save_images(
+                images_a, filename_prefix, prompt, extra_pnginfo
+            )["ui"]["images"]
 
         if images_b is not None and len(images_b) > 0:
-            result['ui']['b_images'] = self.save_images(images_b, filename_prefix, prompt, extra_pnginfo)['ui']['images']
+            result["ui"]["b_images"] = self.save_images(
+                images_b, filename_prefix, prompt, extra_pnginfo
+            )["ui"]["images"]
 
         return result
 

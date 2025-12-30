@@ -65,7 +65,9 @@ class LoopBase:
                 contained[child_id] = True
                 self.collect_contained(child_id, upstream, contained)
 
-    def build_expanded_graph(self, dynprompt, unique_id, start_node_id, **iteration_inputs):
+    def build_expanded_graph(
+        self, dynprompt, unique_id, start_node_id, **iteration_inputs
+    ):
         """
         Build the expanded subgraph for the next loop iteration.
 

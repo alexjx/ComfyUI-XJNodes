@@ -23,13 +23,11 @@ class WorkflowMetadataParser:
         "steps": ["steps", "sampling_steps", "num_steps"],
         "cfg": ["cfg", "cfg_scale", "guidance_scale"],
         "denoise": ["denoise", "denoise_strength"],
-
         # Models
         "checkpoint": ["ckpt_name", "model_name", "checkpoint"],
         "unet": ["unet_name"],  # Load Diffusion Model node
         "lora": ["lora_name", "lora"],
         "lora_strength": ["strength_model", "lora_strength", "strength"],
-
         # Prompts
         "positive": ["text", "prompt", "positive"],
         "negative": ["text", "prompt", "negative"],
@@ -70,7 +68,7 @@ class WorkflowMetadataParser:
                     "type": class_type,
                     "title": node_titles.get(node_id, class_type),
                     "icon": self._get_node_icon(class_type),
-                    "params": params
+                    "params": params,
                 }
                 result["nodes"].append(node_info)
 
@@ -92,7 +90,11 @@ class WorkflowMetadataParser:
                 # Special handling for prompts based on class type
                 if param_name in ["positive", "negative"]:
                     # Only extract if class type suggests it's a prompt node
-                    if "CLIP" in class_type or "Prompt" in class_type or "Text" in class_type:
+                    if (
+                        "CLIP" in class_type
+                        or "Prompt" in class_type
+                        or "Text" in class_type
+                    ):
                         # Determine if positive or negative by class name or title
                         if "negative" in class_type.lower():
                             params["negative"] = value
@@ -158,7 +160,9 @@ class WorkflowMetadataParser:
 
         if "sampler" in type_lower:
             return "🎨"
-        elif "checkpoint" in type_lower or "unet" in type_lower or "model" in type_lower:
+        elif (
+            "checkpoint" in type_lower or "unet" in type_lower or "model" in type_lower
+        ):
             return "🤖"
         elif "lora" in type_lower:
             return "🔧"
@@ -170,6 +174,7 @@ class WorkflowMetadataParser:
             return "📐"
         else:
             return "⚙️"
+
 
 # Add server API routes
 @server.PromptServer.instance.routes.get("/xjnodes/get_text_file_lines")
@@ -201,17 +206,17 @@ async def get_text_file_lines(request):
 
         # Remove empty lines and comments
         text_list = [text.strip().lstrip("- ") for text in text_list]
-        text_list = [
-            text for text in text_list if text and not text.startswith("#")
-        ]
+        text_list = [text for text in text_list if text and not text.startswith("#")]
 
         line_count = len(text_list)
 
-        return web.json_response({
-            "filename": filename,
-            "line_count": line_count,
-            "max_choice": max(1, line_count)
-        })
+        return web.json_response(
+            {
+                "filename": filename,
+                "line_count": line_count,
+                "max_choice": max(1, line_count),
+            }
+        )
 
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -233,7 +238,7 @@ async def list_images(request):
             return web.json_response({"error": "Invalid directory type"}, status=400)
 
         # Clean subdirectory: remove leading/trailing slashes
-        subdirectory = subdirectory.strip().strip('/')
+        subdirectory = subdirectory.strip().strip("/")
 
         # Construct full directory path
         if subdirectory:
@@ -250,22 +255,22 @@ async def list_images(request):
             return web.json_response({"images": []})
 
         # List image files
-        image_extensions = ['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff', '.gif']
+        image_extensions = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".gif"]
         files = []
 
         if os.path.isdir(full_dir):
             for f in os.listdir(full_dir):
                 file_path = os.path.join(full_dir, f)
-                if os.path.isfile(file_path) and any(f.lower().endswith(ext) for ext in image_extensions):
+                if os.path.isfile(file_path) and any(
+                    f.lower().endswith(ext) for ext in image_extensions
+                ):
                     files.append(f)
 
         files.sort()
 
-        return web.json_response({
-            "images": files,
-            "directory": directory,
-            "subdirectory": subdirectory
-        })
+        return web.json_response(
+            {"images": files, "directory": directory, "subdirectory": subdirectory}
+        )
 
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -287,7 +292,7 @@ async def list_subdirectories(request):
             return web.json_response({"error": "Invalid directory type"}, status=400)
 
         # Clean current_path: remove leading/trailing slashes
-        current_path = current_path.strip().strip('/')
+        current_path = current_path.strip().strip("/")
 
         # Construct full directory path to search
         if current_path:
@@ -310,11 +315,13 @@ async def list_subdirectories(request):
 
         subdirs.sort()
 
-        return web.json_response({
-            "subdirectories": subdirs,
-            "directory": directory,
-            "current_path": current_path
-        })
+        return web.json_response(
+            {
+                "subdirectories": subdirs,
+                "directory": directory,
+                "current_path": current_path,
+            }
+        )
 
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -343,7 +350,7 @@ async def get_image_metadata(request):
             return web.json_response({"error": "Invalid directory type"}, status=400)
 
         # Clean subdirectory
-        subdirectory = subdirectory.strip().strip('/')
+        subdirectory = subdirectory.strip().strip("/")
 
         # Construct full file path
         if subdirectory:
@@ -376,27 +383,26 @@ async def get_image_metadata(request):
 
             img.close()
         except Exception as e:
-            return web.json_response({
-                "success": False,
-                "error": f"Failed to read image metadata: {str(e)}"
-            }, status=500)
+            return web.json_response(
+                {"success": False, "error": f"Failed to read image metadata: {str(e)}"},
+                status=500,
+            )
 
         # Parse metadata with heuristic parser
         parser = WorkflowMetadataParser()
         parsed = parser.parse(raw_metadata)
 
-        return web.json_response({
-            "success": True,
-            "filename": filename,
-            "raw_metadata": raw_metadata,
-            "parsed": parsed,
-        })
+        return web.json_response(
+            {
+                "success": True,
+                "filename": filename,
+                "raw_metadata": raw_metadata,
+                "parsed": parsed,
+            }
+        )
 
     except Exception as e:
-        return web.json_response({
-            "success": False,
-            "error": str(e)
-        }, status=500)
+        return web.json_response({"success": False, "error": str(e)}, status=500)
 
 
 @server.PromptServer.instance.routes.get("/xjnodes/get_loras")
@@ -406,16 +412,9 @@ async def get_loras(request):
     """
     try:
         loras = folder_paths.get_filename_list("loras")
-        return web.json_response({
-            "success": True,
-            "loras": loras
-        })
+        return web.json_response({"success": True, "loras": loras})
     except Exception as e:
-        return web.json_response({
-            "success": False,
-            "error": str(e),
-            "loras": []
-        })
+        return web.json_response({"success": False, "error": str(e), "loras": []})
 
 
 @server.PromptServer.instance.routes.post("/xjnodes/delete_image")
@@ -441,7 +440,7 @@ async def delete_image(request):
             return web.json_response({"error": "Invalid directory type"}, status=400)
 
         # Clean subdirectory
-        subdirectory = subdirectory.strip().strip('/')
+        subdirectory = subdirectory.strip().strip("/")
 
         # Construct full file path
         if subdirectory:
@@ -460,16 +459,12 @@ async def delete_image(request):
         # Delete the file
         os.remove(image_path)
 
-        return web.json_response({
-            "success": True,
-            "message": f"Successfully deleted {filename}"
-        })
+        return web.json_response(
+            {"success": True, "message": f"Successfully deleted {filename}"}
+        )
 
     except Exception as e:
-        return web.json_response({
-            "success": False,
-            "error": str(e)
-        }, status=500)
+        return web.json_response({"success": False, "error": str(e)}, status=500)
 
 
 __all__ = [

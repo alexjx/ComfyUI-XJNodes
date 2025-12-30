@@ -50,7 +50,7 @@ class XJImagePreviewBridge:
                 "unique_id": "UNIQUE_ID",
                 "prompt": "PROMPT",
                 "extra_pnginfo": "EXTRA_PNGINFO",
-            }
+            },
         }
 
     RETURN_TYPES = ("IMAGE", "MASK")
@@ -81,19 +81,23 @@ class XJImagePreviewBridge:
             # Load mask file (composite)
             mask_img = Image.open(mask_file_path)
 
-            if 'A' not in mask_img.getbands():
+            if "A" not in mask_img.getbands():
                 return False, "No alpha channel in mask file", None
 
             # Extract components
-            rgb_from_file = np.array(mask_img.convert('RGB')).astype(np.float32) / 255.0
-            alpha = np.array(mask_img.getchannel('A')).astype(np.float32) / 255.0
+            rgb_from_file = np.array(mask_img.convert("RGB")).astype(np.float32) / 255.0
+            alpha = np.array(mask_img.getchannel("A")).astype(np.float32) / 255.0
 
             # Current image (first in batch)
             current_img = current_image_tensor[0].cpu().numpy()  # [H, W, C]
 
             # Check dimensions
             if rgb_from_file.shape != current_img.shape:
-                return False, f"Size mismatch: mask {rgb_from_file.shape} vs image {current_img.shape}", None
+                return (
+                    False,
+                    f"Size mismatch: mask {rgb_from_file.shape} vs image {current_img.shape}",
+                    None,
+                )
 
             # Create mask tensor (ComfyUI convention: inverted)
             mask_tensor = torch.from_numpy(1.0 - alpha).unsqueeze(0)
@@ -103,7 +107,7 @@ class XJImagePreviewBridge:
                 return False, "Mask is empty (all zeros)", None
 
             # Find non-masked pixels (where mask == 0, meaning not selected)
-            non_masked = (mask_tensor[0] == 0)  # [H, W] boolean
+            non_masked = mask_tensor[0] == 0  # [H, W] boolean
 
             if non_masked.sum() == 0:
                 # Entire image is masked - can't validate, but accept
@@ -120,14 +124,30 @@ class XJImagePreviewBridge:
             tolerance = 0.05  # 5% = ~13 levels in 0-255 range
 
             if mean_diff > tolerance:
-                return False, f"Image content mismatch (mean_diff={mean_diff:.3f}, max_diff={max_diff:.3f})", None
+                return (
+                    False,
+                    f"Image content mismatch (mean_diff={mean_diff:.3f}, max_diff={max_diff:.3f})",
+                    None,
+                )
 
-            return True, f"Valid (mean_diff={mean_diff:.4f}, max_diff={max_diff:.4f})", mask_tensor
+            return (
+                True,
+                f"Valid (mean_diff={mean_diff:.4f}, max_diff={max_diff:.4f})",
+                mask_tensor,
+            )
 
         except Exception as e:
             return False, f"Error loading mask: {str(e)}", None
 
-    def execute(self, images, stop_if_empty=True, image="", unique_id=None, prompt=None, extra_pnginfo=None):
+    def execute(
+        self,
+        images,
+        stop_if_empty=True,
+        image="",
+        unique_id=None,
+        prompt=None,
+        extra_pnginfo=None,
+    ):
         """
         Execute the preview bridge with proper state handling.
 
@@ -155,7 +175,9 @@ class XJImagePreviewBridge:
 
         # ========== STATE 1: Image Changed or First Run ==========
         if image_changed:
-            logging.info(f"[XJNodes] PreviewBridge {unique_id}: Image changed, saving new preview")
+            logging.info(
+                f"[XJNodes] PreviewBridge {unique_id}: Image changed, saving new preview"
+            )
 
             # Check if mask widget has value (might be from old image)
             use_composite_as_preview = False
@@ -166,18 +188,18 @@ class XJImagePreviewBridge:
                 image_value = image.strip()
                 mask_type = "input"  # Default if no suffix
 
-                if '[' in image_value and ']' in image_value:
-                    type_start = image_value.rfind('[')
-                    type_end = image_value.rfind(']')
-                    mask_type = image_value[type_start+1:type_end].strip()
+                if "[" in image_value and "]" in image_value:
+                    type_start = image_value.rfind("[")
+                    type_end = image_value.rfind("]")
+                    mask_type = image_value[type_start + 1 : type_end].strip()
                     image_value = image_value[:type_start].strip()
 
-                if '/' in image_value:
-                    parts = image_value.rsplit('/', 1)
+                if "/" in image_value:
+                    parts = image_value.rsplit("/", 1)
                     mask_subfolder = parts[0]
                     mask_filename = parts[1]
                 else:
-                    mask_subfolder = 'clipspace' if mask_type == 'input' else ''
+                    mask_subfolder = "clipspace" if mask_type == "input" else ""
                     mask_filename = image_value
 
                 # Get appropriate folder based on [type] suffix
@@ -188,31 +210,45 @@ class XJImagePreviewBridge:
                 else:  # "input" or any other type
                     base_dir = folder_paths.get_input_directory()
 
-                mask_path = os.path.join(base_dir, mask_subfolder, mask_filename) if mask_subfolder else os.path.join(base_dir, mask_filename)
+                mask_path = (
+                    os.path.join(base_dir, mask_subfolder, mask_filename)
+                    if mask_subfolder
+                    else os.path.join(base_dir, mask_filename)
+                )
 
                 # Validate mask belongs to NEW image
-                is_valid, reason, validated_mask = self.validate_mask_for_image(mask_path, images)
+                is_valid, reason, validated_mask = self.validate_mask_for_image(
+                    mask_path, images
+                )
 
                 if is_valid:
-                    logging.info(f"[XJNodes] PreviewBridge {unique_id}: Mask valid for new image: {reason}")
+                    logging.info(
+                        f"[XJNodes] PreviewBridge {unique_id}: Mask valid for new image: {reason}"
+                    )
                     output_mask = validated_mask
                     should_stop = False
                     # Use the composite file directly as preview (don't save again)
                     use_composite_as_preview = True
-                    saved_images = [{
-                        'filename': mask_filename,
-                        'subfolder': mask_subfolder,
-                        'type': mask_type
-                    }]
-                    logging.info(f"[XJNodes] PreviewBridge {unique_id}: Using composite as preview")
+                    saved_images = [
+                        {
+                            "filename": mask_filename,
+                            "subfolder": mask_subfolder,
+                            "type": mask_type,
+                        }
+                    ]
+                    logging.info(
+                        f"[XJNodes] PreviewBridge {unique_id}: Using composite as preview"
+                    )
                 else:
-                    logging.warning(f"[XJNodes] PreviewBridge {unique_id}: Mask invalid for new image: {reason}")
+                    logging.warning(
+                        f"[XJNodes] PreviewBridge {unique_id}: Mask invalid for new image: {reason}"
+                    )
                     # Overwrite the old composite file with the new image (no alpha)
                     # Widget still points to this path, so mask editor will load the new image
                     try:
                         # Convert new image to PIL (RGB only, no alpha)
                         new_img_np = (images[0].cpu().numpy() * 255).astype(np.uint8)
-                        new_img_pil = Image.fromarray(new_img_np, mode='RGB')
+                        new_img_pil = Image.fromarray(new_img_np, mode="RGB")
 
                         # Ensure directory exists
                         mask_dir = os.path.dirname(mask_path)
@@ -220,13 +256,19 @@ class XJImagePreviewBridge:
                             os.makedirs(mask_dir, exist_ok=True)
 
                         # Overwrite the old composite with new image
-                        new_img_pil.save(mask_path, format='PNG')
-                        logging.info(f"[XJNodes] PreviewBridge {unique_id}: Overwrote stale composite with new image: {mask_path}")
+                        new_img_pil.save(mask_path, format="PNG")
+                        logging.info(
+                            f"[XJNodes] PreviewBridge {unique_id}: Overwrote stale composite with new image: {mask_path}"
+                        )
                     except Exception as e:
-                        logging.error(f"[XJNodes] PreviewBridge {unique_id}: Failed to overwrite stale composite: {e}")
+                        logging.error(
+                            f"[XJNodes] PreviewBridge {unique_id}: Failed to overwrite stale composite: {e}"
+                        )
 
                     batch, height, width, _ = images.shape
-                    output_mask = torch.zeros((batch, height, width), dtype=torch.float32)
+                    output_mask = torch.zeros(
+                        (batch, height, width), dtype=torch.float32
+                    )
                     should_stop = True  # Always stop if referenced mask can't be loaded
                     stop_reason = f"Image changed. Old mask invalid: {reason}\nPlease create a new mask."
             else:
@@ -239,23 +281,27 @@ class XJImagePreviewBridge:
 
             # Save preview only if not using composite
             if not use_composite_as_preview:
-                filename_prefix = f"PreviewBridge/{unique_id}_" if unique_id else "PreviewBridge/default_"
+                filename_prefix = (
+                    f"PreviewBridge/{unique_id}_"
+                    if unique_id
+                    else "PreviewBridge/default_"
+                )
                 preview_result = nodes.PreviewImage().save_images(
                     images,
                     filename_prefix=filename_prefix,
                     prompt=prompt,
-                    extra_pnginfo=extra_pnginfo
+                    extra_pnginfo=extra_pnginfo,
                 )
 
-                saved_images = preview_result['ui']['images']
+                saved_images = preview_result["ui"]["images"]
                 if not saved_images:
                     raise RuntimeError("Failed to save preview image")
 
             # Update cache regardless
             saved_image_info = saved_images[0]
-            saved_filename = saved_image_info['filename']
-            saved_subfolder = saved_image_info.get('subfolder', '')
-            saved_type = saved_image_info.get('type', 'temp')
+            saved_filename = saved_image_info["filename"]
+            saved_subfolder = saved_image_info.get("subfolder", "")
+            saved_type = saved_image_info.get("type", "temp")
 
             # Update global cache
             _preview_bridge_cache[unique_id] = (current_image_hash, saved_filename)
@@ -268,7 +314,9 @@ class XJImagePreviewBridge:
             use_composite_as_preview = False
             if not image:
                 # STATE 2: No mask widget value
-                logging.info(f"[XJNodes] PreviewBridge {unique_id}: No mask created yet")
+                logging.info(
+                    f"[XJNodes] PreviewBridge {unique_id}: No mask created yet"
+                )
                 batch, height, width, _ = images.shape
                 output_mask = torch.zeros((batch, height, width), dtype=torch.float32)
                 should_stop = stop_if_empty
@@ -281,18 +329,18 @@ class XJImagePreviewBridge:
                 image_value = image.strip()
                 mask_type = "input"  # Default if no suffix
 
-                if '[' in image_value and ']' in image_value:
-                    type_start = image_value.rfind('[')
-                    type_end = image_value.rfind(']')
-                    mask_type = image_value[type_start+1:type_end].strip()
+                if "[" in image_value and "]" in image_value:
+                    type_start = image_value.rfind("[")
+                    type_end = image_value.rfind("]")
+                    mask_type = image_value[type_start + 1 : type_end].strip()
                     image_value = image_value[:type_start].strip()
 
-                if '/' in image_value:
-                    parts = image_value.rsplit('/', 1)
+                if "/" in image_value:
+                    parts = image_value.rsplit("/", 1)
                     mask_subfolder = parts[0]
                     mask_filename = parts[1]
                 else:
-                    mask_subfolder = 'clipspace' if mask_type == 'input' else ''
+                    mask_subfolder = "clipspace" if mask_type == "input" else ""
                     mask_filename = image_value
 
                 # Get appropriate folder based on [type] suffix
@@ -303,31 +351,47 @@ class XJImagePreviewBridge:
                 else:  # "input" or any other type
                     base_dir = folder_paths.get_input_directory()
 
-                mask_path = os.path.join(base_dir, mask_subfolder, mask_filename) if mask_subfolder else os.path.join(base_dir, mask_filename)
+                mask_path = (
+                    os.path.join(base_dir, mask_subfolder, mask_filename)
+                    if mask_subfolder
+                    else os.path.join(base_dir, mask_filename)
+                )
 
                 # Validate mask for current image
-                is_valid, reason, validated_mask = self.validate_mask_for_image(mask_path, images)
+                is_valid, reason, validated_mask = self.validate_mask_for_image(
+                    mask_path, images
+                )
 
                 if is_valid:
-                    logging.info(f"[XJNodes] PreviewBridge {unique_id}: Mask valid: {reason}")
+                    logging.info(
+                        f"[XJNodes] PreviewBridge {unique_id}: Mask valid: {reason}"
+                    )
                     output_mask = validated_mask
                     should_stop = False
                     # Use the composite file directly as preview (don't save again)
                     use_composite_as_preview = True
-                    saved_images = [{
-                        'filename': mask_filename,
-                        'subfolder': mask_subfolder,
-                        'type': mask_type
-                    }]
-                    logging.info(f"[XJNodes] PreviewBridge {unique_id}: Using composite as preview")
+                    saved_images = [
+                        {
+                            "filename": mask_filename,
+                            "subfolder": mask_subfolder,
+                            "type": mask_type,
+                        }
+                    ]
+                    logging.info(
+                        f"[XJNodes] PreviewBridge {unique_id}: Using composite as preview"
+                    )
                 else:
-                    logging.error(f"[XJNodes] PreviewBridge {unique_id}: Mask invalid: {reason}")
+                    logging.error(
+                        f"[XJNodes] PreviewBridge {unique_id}: Mask invalid: {reason}"
+                    )
                     # Overwrite the old composite file with the current image (no alpha)
                     # Widget still points to this path, so mask editor will load the current image
                     try:
                         # Convert current image to PIL (RGB only, no alpha)
-                        current_img_np = (images[0].cpu().numpy() * 255).astype(np.uint8)
-                        current_img_pil = Image.fromarray(current_img_np, mode='RGB')
+                        current_img_np = (images[0].cpu().numpy() * 255).astype(
+                            np.uint8
+                        )
+                        current_img_pil = Image.fromarray(current_img_np, mode="RGB")
 
                         # Ensure directory exists
                         mask_dir = os.path.dirname(mask_path)
@@ -335,34 +399,46 @@ class XJImagePreviewBridge:
                             os.makedirs(mask_dir, exist_ok=True)
 
                         # Overwrite the old composite with current image
-                        current_img_pil.save(mask_path, format='PNG')
-                        logging.info(f"[XJNodes] PreviewBridge {unique_id}: Overwrote stale composite with current image: {mask_path}")
+                        current_img_pil.save(mask_path, format="PNG")
+                        logging.info(
+                            f"[XJNodes] PreviewBridge {unique_id}: Overwrote stale composite with current image: {mask_path}"
+                        )
                     except Exception as e:
-                        logging.error(f"[XJNodes] PreviewBridge {unique_id}: Failed to overwrite stale composite: {e}")
+                        logging.error(
+                            f"[XJNodes] PreviewBridge {unique_id}: Failed to overwrite stale composite: {e}"
+                        )
 
                     batch, height, width, _ = images.shape
-                    output_mask = torch.zeros((batch, height, width), dtype=torch.float32)
+                    output_mask = torch.zeros(
+                        (batch, height, width), dtype=torch.float32
+                    )
                     should_stop = True  # Always stop if referenced mask can't be loaded
-                    stop_reason = f"Mask validation failed: {reason}\nPlease create a new mask."
+                    stop_reason = (
+                        f"Mask validation failed: {reason}\nPlease create a new mask."
+                    )
 
             # Save preview only if not using composite
             if not use_composite_as_preview:
-                filename_prefix = f"PreviewBridge/{unique_id}_" if unique_id else "PreviewBridge/default_"
+                filename_prefix = (
+                    f"PreviewBridge/{unique_id}_"
+                    if unique_id
+                    else "PreviewBridge/default_"
+                )
                 preview_result = nodes.PreviewImage().save_images(
                     images,
                     filename_prefix=filename_prefix,
                     prompt=prompt,
-                    extra_pnginfo=extra_pnginfo
+                    extra_pnginfo=extra_pnginfo,
                 )
 
-                saved_images = preview_result['ui']['images']
+                saved_images = preview_result["ui"]["images"]
                 if not saved_images:
                     raise RuntimeError("Failed to save preview image")
 
             saved_image_info = saved_images[0]
-            saved_filename = saved_image_info['filename']
-            saved_subfolder = saved_image_info.get('subfolder', '')
-            saved_type = saved_image_info.get('type', 'temp')
+            saved_filename = saved_image_info["filename"]
+            saved_subfolder = saved_image_info.get("subfolder", "")
+            saved_type = saved_image_info.get("type", "temp")
 
         # ========== Execute or Block Based on State ==========
         if should_stop:
@@ -370,13 +446,10 @@ class XJImagePreviewBridge:
             logging.info(f"[XJNodes] PreviewBridge: Stopping workflow - {stop_reason}")
             return {
                 "ui": {"images": saved_images},
-                "result": (ExecutionBlocker(None), ExecutionBlocker(None))
+                "result": (ExecutionBlocker(None), ExecutionBlocker(None)),
             }
 
-        return {
-            "ui": {"images": saved_images},
-            "result": (images, output_mask)
-        }
+        return {"ui": {"images": saved_images}, "result": (images, output_mask)}
 
     @classmethod
     def IS_CHANGED(cls, stop_if_empty=True, unique_id=None, image="", **kwargs):
@@ -405,19 +478,19 @@ class XJImagePreviewBridge:
         mask_type = "input"  # Default if no suffix
 
         # Extract [type] suffix
-        if '[' in image_value and ']' in image_value:
-            type_start = image_value.rfind('[')
-            type_end = image_value.rfind(']')
-            mask_type = image_value[type_start+1:type_end].strip()
+        if "[" in image_value and "]" in image_value:
+            type_start = image_value.rfind("[")
+            type_end = image_value.rfind("]")
+            mask_type = image_value[type_start + 1 : type_end].strip()
             image_value = image_value[:type_start].strip()
 
         # Split by '/' to get subfolder and filename
-        if '/' in image_value:
-            parts = image_value.rsplit('/', 1)
+        if "/" in image_value:
+            parts = image_value.rsplit("/", 1)
             mask_subfolder = parts[0]
             mask_filename = parts[1]
         else:
-            mask_subfolder = 'clipspace' if mask_type == 'input' else ''
+            mask_subfolder = "clipspace" if mask_type == "input" else ""
             mask_filename = image_value
 
         # Get appropriate folder based on [type] suffix
@@ -428,12 +501,16 @@ class XJImagePreviewBridge:
         else:  # "input" or any other type
             base_dir = folder_paths.get_input_directory()
 
-        mask_path = os.path.join(base_dir, mask_subfolder, mask_filename) if mask_subfolder else os.path.join(base_dir, mask_filename)
+        mask_path = (
+            os.path.join(base_dir, mask_subfolder, mask_filename)
+            if mask_subfolder
+            else os.path.join(base_dir, mask_filename)
+        )
 
         # Check if mask file exists and hash it
         if os.path.exists(mask_path):
             try:
-                with open(mask_path, 'rb') as f:
+                with open(mask_path, "rb") as f:
                     mask_hash = hashlib.md5(f.read()).hexdigest()
                 return f"has_mask_{mask_hash[:16]}"
             except OSError:

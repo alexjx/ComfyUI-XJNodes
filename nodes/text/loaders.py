@@ -24,13 +24,13 @@ class XJRandomTextFromList:
             List of integers (1-indexed as displayed to users)
         """
         indices = []
-        parts = index_string.split(',')
+        parts = index_string.split(",")
 
         for part in parts:
             part = part.strip()
-            if '-' in part:
+            if "-" in part:
                 # Handle range
-                range_parts = part.split('-')
+                range_parts = part.split("-")
                 if len(range_parts) == 2:
                     start = int(range_parts[0].strip())
                     end = int(range_parts[1].strip())
@@ -71,7 +71,7 @@ class XJRandomTextFromList:
             },
             "optional": {
                 "index_list": ("STRING", {"default": "1, 2, 3"}),
-            }
+            },
         }
 
     RETURN_TYPES = ("STRING",)
@@ -107,11 +107,13 @@ class XJRandomTextFromList:
             valid_indices = [i for i in valid_indices if 1 <= i <= len(text_list)]
 
             if not valid_indices:
-                raise Exception(f"No valid indices in range for list with {len(text_list)} items")
+                raise Exception(
+                    f"No valid indices in range for list with {len(text_list)} items"
+                )
 
             # Create a unique key for this list based on its content and valid indices
             list_key = hashlib.md5(
-                ('|'.join(text_list) + '||' + index_list).encode('utf-8')
+                ("|".join(text_list) + "||" + index_list).encode("utf-8")
             ).hexdigest()
 
             # Get or create memory deque for this specific list
@@ -146,7 +148,7 @@ class XJRandomTextFromList:
             selected_text = text_list[selected_index]
         else:  # random
             # Create a unique key for this list based on its content
-            list_key = hashlib.md5('|'.join(text_list).encode('utf-8')).hexdigest()
+            list_key = hashlib.md5("|".join(text_list).encode("utf-8")).hexdigest()
 
             # Get or create memory deque for this specific list
             if list_key not in self._selection_memories:
@@ -225,7 +227,7 @@ class XJRandomTextFromFile:
             },
             "optional": {
                 "file_path_override": ("STRING", {"forceInput": True}),
-            }
+            },
         }
 
     RETURN_TYPES = ("STRING",)
@@ -259,7 +261,7 @@ class XJRandomTextFromFile:
             selected_text = text_list[choice - 1]
         else:
             # Create a unique key for this file based on its content
-            list_key = hashlib.md5('|'.join(text_list).encode('utf-8')).hexdigest()
+            list_key = hashlib.md5("|".join(text_list).encode("utf-8")).hexdigest()
 
             # Get or create memory deque for this specific file
             if list_key not in self._selection_memories:
@@ -392,7 +394,7 @@ class XJRandomText:
         random.seed(seed)
 
         # Generate random text from the specified characters
-        random_text = ''.join(random.choice(chars) for _ in range(length))
+        random_text = "".join(random.choice(chars) for _ in range(length))
 
         return (random_text,)
 

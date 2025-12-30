@@ -66,7 +66,7 @@ def is_valid_seg(seg):
     else:
         # PIL Image or other types - check if it has size attribute
         try:
-            if hasattr(seg.cropped_mask, 'size'):
+            if hasattr(seg.cropped_mask, "size"):
                 # PIL Image size is (width, height)
                 width, height = seg.cropped_mask.size
                 if width == 0 or height == 0:
