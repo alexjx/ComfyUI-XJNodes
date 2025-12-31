@@ -2446,5 +2446,42 @@ app.registerExtension({
                 return result;
             };
         }
+
+        // Handle XJImagePreviewBridge node - clear mask widget when image changes
+        if (nodeData.name === "XJImagePreviewBridge") {
+            const originalNodeCreated = nodeType.prototype.onNodeCreated;
+            const originalOnExecuted = nodeType.prototype.onExecuted;
+
+            nodeType.prototype.onNodeCreated = function() {
+                const result = originalNodeCreated?.apply(this, arguments);
+
+                // Track the last image hash to detect changes
+                this._lastImageHash = null;
+
+                return result;
+            };
+
+            nodeType.prototype.onExecuted = function(message) {
+                if (originalOnExecuted) {
+                    originalOnExecuted.apply(this, arguments);
+                }
+
+                // When images change, clear the mask widget
+                if (this.imgs && this.imgs.length > 0) {
+                    const currentImg = this.imgs[0];
+                    const currentHash = currentImg?.src || "";
+
+                    // If image changed, clear the mask widget
+                    if (this._lastImageHash && this._lastImageHash !== currentHash) {
+                        const imageWidget = this.widgets?.find(w => w.name === "image");
+                        if (imageWidget) {
+                            imageWidget.value = "";
+                        }
+                    }
+
+                    this._lastImageHash = currentHash;
+                }
+            };
+        }
     }
 });
