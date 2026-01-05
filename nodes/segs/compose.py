@@ -2,10 +2,13 @@
 SEGS composition nodes - reconstruct images from processed segments.
 """
 
+import sys
 import numpy as np
 import torch
 import torch.nn.functional as F
 from PIL import Image
+
+from .core import SEG
 
 
 class XJSegsStitcher:
@@ -172,10 +175,144 @@ class XJSegsStitcher:
         return blurred
 
 
+class XJSegsMerge:
+    """
+    Merge multiple SEGs into a single merged SEG.
+    - bboxes: covers all segments
+    - confidence: maximum confidence
+    - label: from the most confident segment
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "segs": ("SEGS",),
+            },
+        }
+
+    RETURN_TYPES = ("SEGS",)
+    RETURN_NAMES = ("segs",)
+    CATEGORY = "XJNodes/segs"
+    FUNCTION = "merge"
+
+    def merge(self, segs):
+        """
+        Merge all SEGs into a single SEG.
+
+        Args:
+            segs: SEGS tuple ((height, width), [SEG, ...])
+
+        Returns:
+            SEGS with a single merged SEG
+        """
+        shape = segs[0]
+        segments = segs[1]
+
+        if not segments:
+            # Empty SEGS, return as-is
+            return (segs,)
+
+        # Initialize bounding box tracking
+        crop_left = sys.maxsize
+        crop_right = 0
+        crop_top = sys.maxsize
+        crop_bottom = 0
+
+        bbox_left = sys.maxsize
+        bbox_right = 0
+        bbox_top = sys.maxsize
+        bbox_bottom = 0
+
+        # Track max confidence and corresponding label
+        max_confidence = -1.0
+        max_confidence_label = "merged"
+
+        # Find bounding boxes that cover all segments and max confidence
+        for seg in segments:
+            cx1, cy1, cx2, cy2 = seg.crop_region
+            bx1, by1, bx2, by2 = seg.bbox
+
+            crop_left = min(crop_left, cx1)
+            crop_top = min(crop_top, cy1)
+            crop_right = max(crop_right, cx2)
+            crop_bottom = max(crop_bottom, cy2)
+
+            bbox_left = min(bbox_left, bx1)
+            bbox_top = min(bbox_top, by1)
+            bbox_right = max(bbox_right, bx2)
+            bbox_bottom = max(bbox_bottom, by2)
+
+            # Track max confidence and its label
+            if seg.confidence > max_confidence:
+                max_confidence = seg.confidence
+                max_confidence_label = seg.label
+
+        # If no segments had valid confidence, use 0.0
+        if max_confidence < 0:
+            max_confidence = 0.0
+
+        # Combine all masks using OR operation
+        combined_mask = self._combine_masks(segs)
+
+        # Crop the combined mask to the merged crop region
+        cropped_mask = combined_mask[crop_top:crop_bottom, crop_left:crop_right]
+        cropped_mask = cropped_mask.unsqueeze(0)
+
+        crop_region = [crop_left, crop_top, crop_right, crop_bottom]
+        bbox = [bbox_left, bbox_top, bbox_right, bbox_bottom]
+
+        # Create merged SEG with max confidence and label from most confident segment
+        merged_seg = SEG(
+            None, cropped_mask, max_confidence, crop_region, bbox, max_confidence_label, None
+        )
+
+        return ((shape, [merged_seg]),)
+
+    def _combine_masks(self, segs):
+        """
+        Combine all segment masks using OR operation.
+
+        Args:
+            segs: SEGS tuple
+
+        Returns:
+            Combined mask tensor (H, W)
+        """
+        shape = segs[0]
+        h, w = shape[0], shape[1]
+
+        mask = np.zeros((h, w), dtype=np.uint8)
+
+        for seg in segs[1]:
+            cropped_mask = seg.cropped_mask
+            crop_region = seg.crop_region
+
+            # Handle both numpy arrays and tensors
+            if isinstance(cropped_mask, np.ndarray):
+                mask_data = (cropped_mask * 255).astype(np.uint8)
+            else:
+                # Convert tensor to numpy
+                mask_data = (cropped_mask * 255).cpu().numpy().astype(np.uint8)
+
+            # Handle 3D masks by squeezing to 2D
+            if mask_data.ndim == 3:
+                mask_data = mask_data.squeeze(0)
+
+            # OR operation to combine masks
+            mask[crop_region[1] : crop_region[3], crop_region[0] : crop_region[2]] |= (
+                mask_data
+            )
+
+        return torch.from_numpy(mask.astype(np.float32) / 255.0)
+
+
 NODE_CLASS_MAPPINGS = {
     "XJSegsStitcher": XJSegsStitcher,
+    "XJSegsMerge": XJSegsMerge,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "XJSegsStitcher": "SEGS Stitcher",
+    "XJSegsMerge": "SEGS Merge",
 }
