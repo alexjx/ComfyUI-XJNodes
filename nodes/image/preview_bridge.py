@@ -161,7 +161,6 @@ class XJImagePreviewBridge:
             image: Widget string value (mask filename set by mask editor)
             unique_id: Node's unique ID
         """
-
         # Calculate hash of current images to detect changes
         current_image_hash = hashlib.md5(images.cpu().numpy().tobytes()).hexdigest()
 
@@ -190,6 +189,7 @@ class XJImagePreviewBridge:
                 if unique_id
                 else "PreviewBridge/default_"
             )
+
             preview_result = nodes.PreviewImage().save_images(
                 images,
                 filename_prefix=filename_prefix,
@@ -266,18 +266,39 @@ class XJImagePreviewBridge:
                     )
                     output_mask = validated_mask
                     should_stop = False
-                    # Use the composite file directly as preview (don't save again)
-                    use_composite_as_preview = True
-                    saved_images = [
-                        {
-                            "filename": mask_filename,
-                            "subfolder": mask_subfolder,
-                            "type": mask_type,
-                        }
-                    ]
-                    logging.info(
-                        f"[XJNodes] PreviewBridge {unique_id}: Using composite as preview"
-                    )
+
+                    # Copy the composite to the cached preview location
+                    # This keeps the filename stable (JavaScript happy) while showing the mask overlay (user happy)
+                    if cached_filename:
+                        try:
+                            import shutil
+                            cached_preview_path = os.path.join(
+                                folder_paths.get_temp_directory(),
+                                "PreviewBridge",
+                                cached_filename
+                            )
+
+                            # Ensure directory exists
+                            os.makedirs(os.path.dirname(cached_preview_path), exist_ok=True)
+
+                            # Copy composite to cached location
+                            shutil.copy2(mask_path, cached_preview_path)
+
+                            use_composite_as_preview = True  # Skip saving again
+                            saved_images = [
+                                {
+                                    "filename": cached_filename,
+                                    "subfolder": "PreviewBridge",
+                                    "type": "temp",
+                                }
+                            ]
+                        except Exception as e:
+                            logging.error(
+                                f"[XJNodes] PreviewBridge {unique_id}: Failed to copy composite: {e}"
+                            )
+                            use_composite_as_preview = False
+                    else:
+                        use_composite_as_preview = False
                 else:
                     logging.error(
                         f"[XJNodes] PreviewBridge {unique_id}: Mask invalid: {reason}"
@@ -315,23 +336,34 @@ class XJImagePreviewBridge:
                         f"Mask validation failed: {reason}\nPlease create a new mask."
                     )
 
-            # Save preview only if not using composite
+            # Save preview only if not using composite AND we don't have a cached preview
             if not use_composite_as_preview:
-                filename_prefix = (
-                    f"PreviewBridge/{unique_id}_"
-                    if unique_id
-                    else "PreviewBridge/default_"
-                )
-                preview_result = nodes.PreviewImage().save_images(
-                    images,
-                    filename_prefix=filename_prefix,
-                    prompt=prompt,
-                    extra_pnginfo=extra_pnginfo,
-                )
+                if cached_filename:
+                    # Reuse the cached preview to avoid generating new filename
+                    saved_images = [
+                        {
+                            "filename": cached_filename,
+                            "subfolder": "PreviewBridge",
+                            "type": "temp",
+                        }
+                    ]
+                else:
+                    # No cached preview, save a new one (shouldn't happen in STATE 2/3)
+                    filename_prefix = (
+                        f"PreviewBridge/{unique_id}_"
+                        if unique_id
+                        else "PreviewBridge/default_"
+                    )
+                    preview_result = nodes.PreviewImage().save_images(
+                        images,
+                        filename_prefix=filename_prefix,
+                        prompt=prompt,
+                        extra_pnginfo=extra_pnginfo,
+                    )
 
-                saved_images = preview_result["ui"]["images"]
-                if not saved_images:
-                    raise RuntimeError("Failed to save preview image")
+                    saved_images = preview_result["ui"]["images"]
+                    if not saved_images:
+                        raise RuntimeError("Failed to save preview image")
 
         # ========== Execute or Block Based on State ==========
         if should_stop:

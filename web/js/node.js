@@ -2447,16 +2447,37 @@ app.registerExtension({
             };
         }
 
-        // Handle XJImagePreviewBridge node - clear mask widget when image changes
+        // Handle XJImagePreviewBridge node - clipspace and mask editor integration
         if (nodeData.name === "XJImagePreviewBridge") {
             const originalNodeCreated = nodeType.prototype.onNodeCreated;
             const originalOnExecuted = nodeType.prototype.onExecuted;
+            const originalGetExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
 
             nodeType.prototype.onNodeCreated = function() {
                 const result = originalNodeCreated?.apply(this, arguments);
 
                 // Track the last image hash to detect changes
                 this._lastImageHash = null;
+
+                // Configure the image widget to accept clipspace data
+                const imageWidget = this.widgets?.find(w => w.name === "image");
+                if (imageWidget) {
+                    // Mark this widget as accepting clipspace composite images
+                    imageWidget.options = imageWidget.options || {};
+                    imageWidget.options.serialize = true; // Ensure widget value is serialized
+
+                    // Set up callback for when clipspace pastes data back
+                    const originalCallback = imageWidget.callback;
+                    imageWidget.callback = (value) => {
+                        if (originalCallback) {
+                            originalCallback.call(this, value);
+                        }
+                        // Trigger graph update
+                        if (this.onResize) {
+                            this.onResize(this.size);
+                        }
+                    };
+                }
 
                 return result;
             };
@@ -2466,10 +2487,11 @@ app.registerExtension({
                     originalOnExecuted.apply(this, arguments);
                 }
 
-                // When images change, clear the mask widget
-                if (this.imgs && this.imgs.length > 0) {
-                    const currentImg = this.imgs[0];
-                    const currentHash = currentImg?.src || "";
+                // Use the message data instead of this.imgs which may not be populated yet
+                if (message && message.images && message.images.length > 0) {
+                    const imageInfo = message.images[0];
+                    // Create a stable hash from filename, subfolder, and type (ignore rand parameter)
+                    const currentHash = `${imageInfo.filename}|${imageInfo.subfolder || ''}|${imageInfo.type || ''}`;
 
                     // If image changed, clear the mask widget
                     if (this._lastImageHash && this._lastImageHash !== currentHash) {
@@ -2480,6 +2502,51 @@ app.registerExtension({
                     }
 
                     this._lastImageHash = currentHash;
+                }
+            };
+
+            // Add context menu option to open mask editor
+            nodeType.prototype.getExtraMenuOptions = function(_, options) {
+                if (originalGetExtraMenuOptions) {
+                    originalGetExtraMenuOptions.apply(this, arguments);
+                }
+
+                // Add "Open in MaskEditor" option if we have a preview image
+                if (this.imgs && this.imgs.length > 0) {
+                    const imageWidget = this.widgets?.find(w => w.name === "image");
+
+                    options.unshift(
+                        {
+                            content: "Open in MaskEditor",
+                            callback: () => {
+                                // Get the current preview image
+                                const img = this.imgs[0];
+                                if (!img) {
+                                    return;
+                                }
+
+                                // Send to clipspace for mask editing
+                                // ComfyUI's clipspace API expects this format
+                                if (window.ComfyApp && window.ComfyApp.clipspace) {
+                                    // Store reference to this node and widget for callback
+                                    window.ComfyApp.clipspace = {
+                                        widgets: [imageWidget],
+                                        imgs: [img],
+                                        original: [img],
+                                        images: [img],
+                                        selectedIndex: 0,
+                                        img_paste_mode: 'selected'
+                                    };
+
+                                    // Open the clipspace/mask editor
+                                    window.ComfyApp.canvas.node_widget = null;
+                                    window.ComfyApp.canvas.draw();
+                                } else {
+                                    alert("Mask editor not available. Please use the clipspace extension or built-in mask editor.");
+                                }
+                            }
+                        }
+                    );
                 }
             };
         }
