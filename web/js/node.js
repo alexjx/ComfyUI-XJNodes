@@ -1104,6 +1104,17 @@ app.registerExtension({
                 });
                 resizeObserver.observe(textarea);
 
+                // Prevent default cursor change on middle mouse button (scroll wheel)
+                const preventScrollCursor = (e) => {
+                    if (e.button === 1) { // Middle mouse button
+                        e.preventDefault();
+                        return false;
+                    }
+                };
+
+                gutter.addEventListener('mousedown', preventScrollCursor);
+                textarea.addEventListener('mousedown', preventScrollCursor);
+
                 // Handle gutter clicks to set choice field
                 gutter.addEventListener('click', (e) => {
                     const clickedElement = e.target;
