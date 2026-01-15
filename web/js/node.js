@@ -836,8 +836,11 @@ class XJImagePairCompareWidget {
             // Same size - show single format
             sizeText = `${imageA.naturalWidth} x ${imageA.naturalHeight}`;
         } else {
-            // Different sizes - show both
-            sizeText = `${imageA.naturalWidth} x ${imageA.naturalHeight} | ${imageB.naturalWidth} x ${imageB.naturalHeight}`;
+            // Different sizes - show both with scale factor
+            const pixelsA = imageA.naturalWidth * imageA.naturalHeight;
+            const pixelsB = imageB.naturalWidth * imageB.naturalHeight;
+            const scaleFactor = (pixelsB / pixelsA).toFixed(2);
+            sizeText = `${imageA.naturalWidth} x ${imageA.naturalHeight} | ${imageB.naturalWidth} x ${imageB.naturalHeight} (${scaleFactor})`;
         }
 
         ctx.fillText(sizeText, nodeWidth / 2, destY + targetHeight + 8);
@@ -1835,6 +1838,63 @@ app.registerExtension({
                         // Set the value
                         imageWidget.value = savedImageValue;
                     }
+                }
+            };
+
+            // Add context menu for image operations
+            const originalGetExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
+            nodeType.prototype.getExtraMenuOptions = function(_, options) {
+                if (originalGetExtraMenuOptions) {
+                    originalGetExtraMenuOptions.apply(this, arguments);
+                }
+
+                const directoryWidget = this.widgets.find(w => w.name === "directory");
+                const subdirectoryWidget = this.widgets.find(w => w.name === "subdirectory");
+                const imageWidget = this.widgets.find(w => w.name === "image");
+
+                // Only show menu options if an image is selected
+                if (imageWidget && imageWidget.value && directoryWidget) {
+                    const filename = imageWidget.value;
+                    const directory = directoryWidget.value;
+                    let subdirectory = subdirectoryWidget ? (subdirectoryWidget.value || "").trim() : "";
+                    subdirectory = subdirectory.replace(/^\/+|\/+$/g, '');
+
+                    // Build the full image URL (without preview optimization for better quality)
+                    const imageUrl = `/view?filename=${encodeURIComponent(filename)}&type=${directory}&subfolder=${encodeURIComponent(subdirectory)}&channel=rgba`;
+
+                    options.unshift(
+                        {
+                            content: "Open Image",
+                            callback: () => {
+                                window.open(imageUrl, "_blank");
+                            }
+                        },
+                        {
+                            content: "Copy Image",
+                            callback: async () => {
+                                try {
+                                    // Fetch the image as a blob
+                                    const response = await fetch(imageUrl);
+                                    if (!response.ok) {
+                                        throw new Error(`Failed to fetch image: ${response.statusText}`);
+                                    }
+                                    const blob = await response.blob();
+
+                                    // Copy to clipboard using the Clipboard API
+                                    await navigator.clipboard.write([
+                                        new ClipboardItem({
+                                            [blob.type]: blob
+                                        })
+                                    ]);
+
+                                    console.log("Image copied to clipboard");
+                                } catch (error) {
+                                    console.error("Failed to copy image:", error);
+                                    alert("Failed to copy image to clipboard. " + error.message);
+                                }
+                            }
+                        }
+                    );
                 }
             };
 
