@@ -118,7 +118,7 @@ class XJRandomTextFromList:
 
             # Get or create memory deque for this specific list
             if list_key not in self._selection_memories:
-                self._selection_memories[list_key] = deque(maxlen=100)
+                self._selection_memories[list_key] = deque(maxlen=10)
             memory = self._selection_memories[list_key]
 
             # Create a Random object with the seed for better randomness
@@ -152,7 +152,7 @@ class XJRandomTextFromList:
 
             # Get or create memory deque for this specific list
             if list_key not in self._selection_memories:
-                self._selection_memories[list_key] = deque(maxlen=100)
+                self._selection_memories[list_key] = deque(maxlen=10)
             memory = self._selection_memories[list_key]
 
             # Create a Random object with the seed for better randomness
@@ -265,7 +265,7 @@ class XJRandomTextFromFile:
 
             # Get or create memory deque for this specific file
             if list_key not in self._selection_memories:
-                self._selection_memories[list_key] = deque(maxlen=100)
+                self._selection_memories[list_key] = deque(maxlen=10)
             memory = self._selection_memories[list_key]
 
             # Create a Random object with the seed for better randomness
