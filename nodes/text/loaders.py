@@ -92,10 +92,8 @@ class XJRandomTextFromList:
             return ([""],)
 
         if type == "fixed":
-            # If type is fixed, return the first 'choice' number of strings
-            if choice >= len(text_list) + 1:
-                raise Exception(f"Choice {choice} exceeded max length {len(text_list)}")
-            selected_text = text_list[choice - 1]
+            # If type is fixed, return the item at 'choice' index with wrap-around
+            selected_text = text_list[(choice - 1) % len(text_list)]
         elif type == "list":
             # Parse the index list
             try:
@@ -255,10 +253,8 @@ class XJRandomTextFromFile:
             return ([""],)
 
         if type == "fixed":
-            # If type is fixed, return the first 'choice' number of strings
-            if choice >= len(text_list) + 1:
-                raise Exception(f"Choice {choice} exceeded max length {len(text_list)}")
-            selected_text = text_list[choice - 1]
+            # If type is fixed, return the item at 'choice' index with wrap-around
+            selected_text = text_list[(choice - 1) % len(text_list)]
         else:
             # Create a unique key for this file based on its content
             list_key = hashlib.md5("|".join(text_list).encode("utf-8")).hexdigest()
