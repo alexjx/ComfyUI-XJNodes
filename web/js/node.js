@@ -3,36 +3,69 @@ import { app } from "/scripts/app.js";
 // Registry for node update functions (to support refresh)
 const registeredNodes = {};
 
-// Function to process text according to XJRandomTextFromList logic
-function processTextList(text) {
+// Function to parse text into blocks (supports multiline items)
+function parseTextBlocks(text) {
     const lines = text.split('\n');
-    const validLines = [];
-    let currentIndex = 1;
+    const blocks = [];
+    let currentBlock = null;
+    let currentType = null; // 'item' or 'comment'
 
     for (const line of lines) {
-        const trimmed = line.trim();
-        // Skip empty lines and comments (starting with #)
-        if (!trimmed || trimmed.startsWith('#')) {
-            continue;
-        }
+        const stripped = line.trimStart();
 
-        // Remove "- " prefix if present (same as Python: lstrip("- "))
-        let cleanLine = trimmed;
-        if (cleanLine.startsWith('- ')) {
-            cleanLine = cleanLine.substring(2);
-        } else if (cleanLine.startsWith('-')) {
-            cleanLine = cleanLine.substring(1);
-        }
+        if (stripped.startsWith('-')) {
+            // Start new item block
+            if (currentBlock !== null && currentType === 'item') {
+                blocks.push(currentBlock.join('\n'));
+            }
 
-        validLines.push({
-            index: currentIndex,
-            text: cleanLine,
-            originalLine: line
-        });
-        currentIndex++;
+            // Remove leading '- ' or '-' from first line
+            let firstLine;
+            if (stripped.startsWith('- ')) {
+                firstLine = stripped.substring(2);
+            } else {
+                firstLine = stripped.substring(1);
+            }
+
+            currentBlock = firstLine ? [firstLine] : [];
+            currentType = 'item';
+
+        } else if (stripped.startsWith('#')) {
+            // Start new comment block (will be ignored)
+            if (currentBlock !== null && currentType === 'item') {
+                blocks.push(currentBlock.join('\n'));
+            }
+
+            currentBlock = [];
+            currentType = 'comment';
+
+        } else {
+            // Continuation line
+            if (currentBlock !== null) {
+                // Preserve line as-is (including indentation)
+                currentBlock.push(line);
+            }
+            // If no current block, ignore orphan lines at the start
+        }
     }
 
-    return validLines;
+    // Add final block if it's an item
+    if (currentBlock !== null && currentType === 'item') {
+        blocks.push(currentBlock.join('\n'));
+    }
+
+    // Filter out empty blocks
+    return blocks.filter(b => b.trim());
+}
+
+// Function to process text according to XJRandomTextFromList logic
+function processTextList(text) {
+    const blocks = parseTextBlocks(text);
+    return blocks.map((blockText, idx) => ({
+        index: idx + 1,
+        text: blockText,
+        originalLine: blockText // For backward compatibility
+    }));
 }
 
 
@@ -977,11 +1010,11 @@ app.registerExtension({
                 `;
                 textarea.wrap = "soft"; // Enable soft wrapping
 
-                // Default value
-                const defaultValue = "# This is a comment (will be ignored)\n\n- Option 1: First choice\n- Option 2: Second choice\n- Option 3: Third choice\n\n# Another comment\n- Option 4: Fourth choice";
+                // Default value (demonstrates multiline blocks)
+                const defaultValue = "# This is a comment (will be ignored)\n\n- Option 1: First choice\n  with continuation on line 2\n\n- Option 2: Second choice\n\n- Option 3: Third choice\n  More details here\n  And even more details\n\n# Another comment\n- Option 4: Fourth choice";
                 textarea.value = defaultValue;
 
-                // Accurate line numbering that measures actual visual wrapping
+                // Block-based line numbering (supports multiline items)
                 function updateLineNumbers() {
                     const text = textarea.value;
                     const lines = text.split('\n');
@@ -1017,18 +1050,40 @@ app.registerExtension({
                     `;
                     document.body.appendChild(measurer);
 
-                    let validLineNum = 1;
+                    // Parse lines to determine block numbers
+                    let blockNum = 0;
+                    let currentType = null; // 'item', 'comment', or null
+                    const lineBlockNumbers = []; // Array mapping line index to block number (or null)
 
                     for (let i = 0; i < lines.length; i++) {
-                        const line = lines[i];
-                        const trimmedLine = line.trim();
+                        const stripped = lines[i].trimStart();
 
-                        // Determine if this line should have a number
-                        let lineNumber = '';
-                        if (trimmedLine && !trimmedLine.startsWith('#')) {
-                            lineNumber = validLineNum.toString();
-                            validLineNum++;
+                        if (stripped.startsWith('-')) {
+                            // Start of new item block
+                            if (blockNum === 0) {
+                                blockNum = 1; // First block ever
+                            } else if (currentType !== null) {
+                                blockNum++; // New block after previous content (item or comment)
+                            }
+                            lineBlockNumbers.push(blockNum);
+                            currentType = 'item';
+                        } else if (stripped.startsWith('#')) {
+                            // Start of comment block
+                            lineBlockNumbers.push(null);
+                            currentType = 'comment';
+                        } else if (!stripped) {
+                            // Empty line
+                            lineBlockNumbers.push(null);
+                        } else {
+                            // Continuation line - belongs to current block but doesn't show number
+                            lineBlockNumbers.push(null);
                         }
+                    }
+
+                    // Render gutter with block numbers
+                    for (let i = 0; i < lines.length; i++) {
+                        const line = lines[i];
+                        const lineNumber = lineBlockNumbers[i];
 
                         // Measure how many visual lines this logical line actually takes
                         measurer.textContent = line || ' '; // Use space for empty lines
@@ -1045,12 +1100,12 @@ app.registerExtension({
                                 line-height: ${lineHeight}px;
                                 color: ${(j === 0 && lineNumber) ? '#6a9bd7' : 'transparent'};
                             `;
-                            // Show line number only on the first visual line of each logical line
-                            div.textContent = (j === 0 && lineNumber) ? lineNumber : ' ';
+                            // Show block number only on the first visual line
+                            div.textContent = (j === 0 && lineNumber) ? lineNumber.toString() : ' ';
 
-                            // Store the line number directly on the element for easy click handling
+                            // Store the block number directly on the element for easy click handling
                             if (j === 0 && lineNumber) {
-                                div.dataset.lineNumber = lineNumber;
+                                div.dataset.lineNumber = lineNumber.toString();
                             }
 
                             gutter.appendChild(div);

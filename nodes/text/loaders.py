@@ -6,6 +6,62 @@ import folder_paths
 from collections import deque
 
 
+def parse_text_blocks(text):
+    """
+    Parse text into blocks based on line prefixes:
+    - Lines starting with '-' begin a new item block
+    - Lines starting with '#' begin a comment block (ignored)
+    - Other lines continue the previous block
+
+    Returns a list of text blocks (comment blocks are excluded)
+    """
+    lines = text.splitlines()
+    blocks = []
+    current_block = None
+    current_type = None  # 'item' or 'comment'
+
+    for line in lines:
+        stripped = line.lstrip()
+
+        if stripped.startswith('-'):
+            # Start new item block
+            if current_block is not None and current_type == 'item':
+                blocks.append('\n'.join(current_block))
+
+            # Remove leading '- ' or '-' from first line
+            if stripped.startswith('- '):
+                first_line = stripped[2:]
+            else:
+                first_line = stripped[1:]
+
+            current_block = [first_line] if first_line else []
+            current_type = 'item'
+
+        elif stripped.startswith('#'):
+            # Start new comment block (will be ignored)
+            if current_block is not None and current_type == 'item':
+                blocks.append('\n'.join(current_block))
+
+            current_block = []
+            current_type = 'comment'
+
+        else:
+            # Continuation line
+            if current_block is not None:
+                # Preserve line as-is (including indentation)
+                current_block.append(line)
+            # If no current block, ignore orphan lines at the start
+
+    # Add final block if it's an item
+    if current_block is not None and current_type == 'item':
+        blocks.append('\n'.join(current_block))
+
+    # Filter out empty blocks
+    blocks = [b.strip() for b in blocks if b.strip()]
+
+    return blocks
+
+
 class XJRandomTextFromList:
     # Class-level memory to track recently selected items per unique list
     # Key: hash of list content, Value: deque of recently selected indices
@@ -81,13 +137,8 @@ class XJRandomTextFromList:
     CATEGORY = "XJNodes/text"
 
     def make_list(self, multiline_text, type, choice, seed, index_list="1, 2, 3"):
-        # Split the multiline text into a list of strings
-        text_list = multiline_text.splitlines()
-        # Remove empty lines
-        text_list = [text.strip().lstrip("- ") for text in text_list]
-        text_list = [
-            text for text in text_list if text and not text.startswith("#")
-        ]  # skip comments
+        # Parse text into blocks (supports multiline items)
+        text_list = parse_text_blocks(multiline_text)
         if not text_list:
             return ([""],)
 
@@ -242,13 +293,10 @@ class XJRandomTextFromFile:
         input_dir = folder_paths.get_input_directory()
         file_path = os.path.join(input_dir, file_path)
         with open(file_path, "r", encoding="utf-8") as f:
-            # Read the file and split it into lines
-            text_list = f.read().splitlines()
-        # Remove empty lines
-        text_list = [text.strip().lstrip("- ") for text in text_list]
-        text_list = [
-            text for text in text_list if text and not text.startswith("#")
-        ]  # skip comments
+            content = f.read()
+
+        # Parse text into blocks (supports multiline items)
+        text_list = parse_text_blocks(content)
         if not text_list:
             return ([""],)
 
@@ -329,13 +377,11 @@ class XJTextListFromFile:
         if not os.path.exists(full_path):
             return ([],)
 
-        # Read and process lines (same logic as XJRandomTextFromFile)
+        # Read and parse text into blocks (supports multiline items)
         with open(full_path, "r", encoding="utf-8") as f:
-            text_list = f.read().splitlines()
+            content = f.read()
 
-        # Remove empty lines and comments
-        text_list = [text.strip().lstrip("- ") for text in text_list]
-        text_list = [text for text in text_list if text and not text.startswith("#")]
+        text_list = parse_text_blocks(content)
 
         # Return as list
         return (text_list,)
