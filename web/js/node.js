@@ -2573,6 +2573,42 @@ app.registerExtension({
             };
         }
 
+        // Handle XJDebug node - dynamic type matching
+        if (nodeData.name === "XJDebug") {
+            const originalNodeCreated = nodeType.prototype.onNodeCreated;
+
+            nodeType.prototype.onNodeCreated = function() {
+                const result = originalNodeCreated?.apply(this, arguments);
+
+                // Override onConnectionsChange to update output type based on input
+                const originalOnConnectionsChange = this.onConnectionsChange;
+                this.onConnectionsChange = function(type, index, connected, link_info) {
+                    if (originalOnConnectionsChange) {
+                        originalOnConnectionsChange.apply(this, arguments);
+                    }
+
+                    // When input is connected, update output type to match
+                    if (type === 1 && connected && link_info) { // type 1 = input
+                        const sourceNode = app.graph.getNodeById(link_info.origin_id);
+                        if (sourceNode && sourceNode.outputs && sourceNode.outputs[link_info.origin_slot]) {
+                            const inputType = sourceNode.outputs[link_info.origin_slot].type;
+                            // Update output type to match input
+                            if (this.outputs && this.outputs[0]) {
+                                this.outputs[0].type = inputType;
+                            }
+                        }
+                    } else if (type === 1 && !connected) { // Input disconnected
+                        // Reset to wildcard
+                        if (this.outputs && this.outputs[0]) {
+                            this.outputs[0].type = "*";
+                        }
+                    }
+                };
+
+                return result;
+            };
+        }
+
         // Handle XJImagePreviewBridge node - clipspace and mask editor integration
         if (nodeData.name === "XJImagePreviewBridge") {
             const originalNodeCreated = nodeType.prototype.onNodeCreated;
