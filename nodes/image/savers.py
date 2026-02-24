@@ -254,6 +254,8 @@ class XJSaveImageWithMetadata:
                 results.append(
                     {"filename": file, "subfolder": subfolder, "type": self.type}
                 )
+                # Print saved path with bright orange color
+                print(f"\033[38;5;208m[XJNodes] Saved: {file_path}\033[0m")
                 counter += 1
 
             except Exception as e:
