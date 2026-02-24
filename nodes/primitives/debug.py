@@ -24,7 +24,7 @@ Debug node that logs a message and passes the input through unchanged.
 """
 
     def debug(self, value, text):
-        logger.info(f"[XJDebug] {text}")
+        print(f"\033[96m[XJDebug] {text}\033[0m")
         return (value,)
 
 
