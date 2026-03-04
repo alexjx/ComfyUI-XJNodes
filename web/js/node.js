@@ -239,11 +239,11 @@ class XJImageNavigator {
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
                     <span style="color: #888; font-size: 12px;">Rating:</span>
                     <div id="star-container" style="display: flex; gap: 2px; cursor: pointer;">
-                        <span class="star" data-rating="1" style="font-size: 18px; color: #555; transition: color 0.2s;">★</span>
-                        <span class="star" data-rating="2" style="font-size: 18px; color: #555; transition: color 0.2s;">★</span>
-                        <span class="star" data-rating="3" style="font-size: 18px; color: #555; transition: color 0.2s;">★</span>
-                        <span class="star" data-rating="4" style="font-size: 18px; color: #555; transition: color 0.2s;">★</span>
-                        <span class="star" data-rating="5" style="font-size: 18px; color: #555; transition: color 0.2s;">★</span>
+                        <span class="star" data-rating="1" style="font-size: 18px; color: #888; transition: color 0.2s;">☆</span>
+                        <span class="star" data-rating="2" style="font-size: 18px; color: #888; transition: color 0.2s;">☆</span>
+                        <span class="star" data-rating="3" style="font-size: 18px; color: #888; transition: color 0.2s;">☆</span>
+                        <span class="star" data-rating="4" style="font-size: 18px; color: #888; transition: color 0.2s;">☆</span>
+                        <span class="star" data-rating="5" style="font-size: 18px; color: #888; transition: color 0.2s;">☆</span>
                     </div>
                     <span id="rating-text" style="color: #666; font-size: 11px; margin-left: 4px;"></span>
                 </div>
@@ -468,8 +468,10 @@ class XJImageNavigator {
         this.ratingStars.forEach((star, index) => {
             if (index < count) {
                 star.style.color = '#FFD700'; // Gold
+                star.textContent = '★'; // Filled star
             } else {
-                star.style.color = '#555'; // Gray
+                star.style.color = '#888'; // Light gray
+                star.textContent = '☆'; // Empty star
             }
         });
     }
@@ -1888,8 +1890,11 @@ app.registerExtension({
                                 if (currentFilename && node.imageRatings && node.imageRatings[currentFilename]) {
                                     const rating = node.imageRatings[currentFilename];
 
-                                    // Draw semi-transparent background for stars
-                                    const starText = '★'.repeat(rating) + '☆'.repeat(5 - rating);
+                                    // Build star strings
+                                    const filledStars = '★'.repeat(rating);
+                                    const emptyStars = '☆'.repeat(5 - rating);
+                                    const starText = filledStars + emptyStars;
+
                                     ctx.font = "bold 14px monospace";
                                     const textMetrics = ctx.measureText(starText);
                                     const starWidth = textMetrics.width + 12;
@@ -1900,11 +1905,21 @@ app.registerExtension({
                                     ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
                                     ctx.fillRect(starX, starY, starWidth, starHeight);
 
-                                    // Draw gold stars
-                                    ctx.fillStyle = "#FFD700";
                                     ctx.textAlign = "left";
                                     ctx.textBaseline = "middle";
-                                    ctx.fillText(starText, starX + 6, starY + starHeight / 2);
+
+                                    // Draw filled stars in gold
+                                    if (filledStars) {
+                                        ctx.fillStyle = "#FFD700";
+                                        ctx.fillText(filledStars, starX + 6, starY + starHeight / 2);
+                                    }
+
+                                    // Draw empty stars in gray
+                                    if (emptyStars) {
+                                        ctx.fillStyle = "#888";
+                                        const filledWidth = ctx.measureText(filledStars).width;
+                                        ctx.fillText(emptyStars, starX + 6 + filledWidth, starY + starHeight / 2);
+                                    }
                                 }
 
                                 ctx.restore();
