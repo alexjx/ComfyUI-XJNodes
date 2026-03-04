@@ -233,6 +233,67 @@ class XJImageNavigator {
                 font-family: monospace;
                 word-break: break-word;
             ">Loading...</div>
+
+            <!-- Rating Section -->
+            <div id="rating-section" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #333;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <span style="color: #888; font-size: 12px;">Rating:</span>
+                    <div id="star-container" style="display: flex; gap: 2px; cursor: pointer;">
+                        <span class="star" data-rating="1" style="font-size: 18px; color: #555; transition: color 0.2s;">★</span>
+                        <span class="star" data-rating="2" style="font-size: 18px; color: #555; transition: color 0.2s;">★</span>
+                        <span class="star" data-rating="3" style="font-size: 18px; color: #555; transition: color 0.2s;">★</span>
+                        <span class="star" data-rating="4" style="font-size: 18px; color: #555; transition: color 0.2s;">★</span>
+                        <span class="star" data-rating="5" style="font-size: 18px; color: #555; transition: color 0.2s;">★</span>
+                    </div>
+                    <span id="rating-text" style="color: #666; font-size: 11px; margin-left: 4px;"></span>
+                </div>
+
+                <!-- Comment Section -->
+                <div style="margin-top: 8px;">
+                    <textarea id="comment-text" placeholder="Add comment..." style="
+                        width: 100%;
+                        min-height: 60px;
+                        background: #2a2a2a;
+                        border: 1px solid #444;
+                        border-radius: 4px;
+                        padding: 8px;
+                        color: #ddd;
+                        font-size: 12px;
+                        resize: vertical;
+                        box-sizing: border-box;
+                    "></textarea>
+                </div>
+
+                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                    <button id="save-rating-btn" style="
+                        flex: 1;
+                        background: #4CAF50;
+                        border: none;
+                        color: #fff;
+                        padding: 6px 12px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 12px;
+                        transition: background 0.2s;
+                    ">💾 Save</button>
+                    <button id="clear-rating-btn" style="
+                        background: #555;
+                        border: none;
+                        color: #fff;
+                        padding: 6px 12px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 12px;
+                        transition: background 0.2s;
+                    ">Clear</button>
+                </div>
+                <div id="rating-status" style="
+                    margin-top: 6px;
+                    font-size: 11px;
+                    color: #666;
+                    min-height: 16px;
+                "></div>
+            </div>
         `;
 
         // Get reference to image info text element
@@ -256,6 +317,18 @@ class XJImageNavigator {
         // Get reference to image info text and delete button after DOM is ready
         this.imageInfoText = this.metadataHeader.querySelector('#image-info-text');
         this.deleteButton = this.metadataHeader.querySelector('#delete-image-btn');
+
+        // Get rating elements
+        this.ratingStars = this.metadataHeader.querySelectorAll('.star');
+        this.ratingText = this.metadataHeader.querySelector('#rating-text');
+        this.commentText = this.metadataHeader.querySelector('#comment-text');
+        this.saveRatingBtn = this.metadataHeader.querySelector('#save-rating-btn');
+        this.clearRatingBtn = this.metadataHeader.querySelector('#clear-rating-btn');
+        this.ratingStatus = this.metadataHeader.querySelector('#rating-status');
+
+        // Current rating state
+        this.currentRating = null;
+        this.hasUnsavedChanges = false;
 
         // Assemble the modal
         this.imageArea.appendChild(this.mainImage);
@@ -328,6 +401,158 @@ class XJImageNavigator {
         this.deleteButton.onmouseout = () => {
             this.deleteButton.style.background = '#d32f2f';
         };
+
+        // Rating star interactions
+        this.ratingStars.forEach((star) => {
+            // Hover effect
+            star.onmouseover = () => {
+                const rating = parseInt(star.dataset.rating);
+                this.highlightStars(rating);
+                this.ratingText.textContent = this.getRatingLabel(rating);
+            };
+
+            // Click to select rating
+            star.onclick = () => {
+                const rating = parseInt(star.dataset.rating);
+                this.currentRating = this.currentRating === rating ? null : rating;
+                this.highlightStars(this.currentRating || 0);
+                this.ratingText.textContent = this.currentRating ? this.getRatingLabel(this.currentRating) : '';
+                this.hasUnsavedChanges = true;
+                this.updateRatingStatus('unsaved');
+            };
+        });
+
+        // Star container mouseleave - reset to current rating
+        const starContainer = this.metadataHeader.querySelector('#star-container');
+        starContainer.onmouseleave = () => {
+            this.highlightStars(this.currentRating || 0);
+            this.ratingText.textContent = this.currentRating ? this.getRatingLabel(this.currentRating) : '';
+        };
+
+        // Save rating button
+        this.saveRatingBtn.onmouseover = () => {
+            this.saveRatingBtn.style.background = '#45a049';
+        };
+        this.saveRatingBtn.onmouseout = () => {
+            this.saveRatingBtn.style.background = '#4CAF50';
+        };
+        this.saveRatingBtn.onclick = () => {
+            this.saveRating();
+        };
+
+        // Clear rating button
+        this.clearRatingBtn.onmouseover = () => {
+            this.clearRatingBtn.style.background = '#666';
+        };
+        this.clearRatingBtn.onmouseout = () => {
+            this.clearRatingBtn.style.background = '#555';
+        };
+        this.clearRatingBtn.onclick = () => {
+            this.currentRating = null;
+            this.commentText.value = '';
+            this.highlightStars(0);
+            this.ratingText.textContent = '';
+            this.hasUnsavedChanges = true;
+            this.updateRatingStatus('unsaved');
+        };
+
+        // Comment text change tracking
+        this.commentText.oninput = () => {
+            this.hasUnsavedChanges = true;
+            this.updateRatingStatus('unsaved');
+        };
+    }
+
+    // Rating helper methods
+    highlightStars(count) {
+        this.ratingStars.forEach((star, index) => {
+            if (index < count) {
+                star.style.color = '#FFD700'; // Gold
+            } else {
+                star.style.color = '#555'; // Gray
+            }
+        });
+    }
+
+    getRatingLabel(rating) {
+        const labels = ['', 'Poor', 'Fair', 'Good', 'Very Good', 'Excellent'];
+        return labels[rating] || '';
+    }
+
+    updateRatingStatus(status) {
+        const statusTexts = {
+            'unsaved': '⚠️ Unsaved changes',
+            'saving': '💾 Saving...',
+            'saved': '✅ Saved',
+            'error': '❌ Error saving'
+        };
+        const statusColors = {
+            'unsaved': '#ff9800',
+            'saving': '#2196F3',
+            'saved': '#4CAF50',
+            'error': '#f44336'
+        };
+        this.ratingStatus.textContent = statusTexts[status] || '';
+        this.ratingStatus.style.color = statusColors[status] || '#666';
+    }
+
+    async saveRating() {
+        const currentImage = this.images[this.currentIndex];
+        if (!currentImage) return;
+
+        this.updateRatingStatus('saving');
+
+        try {
+            const response = await fetch('/xjnodes/save_rating', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    directory: this.directory,
+                    subdirectory: this.subdirectory,
+                    filename: currentImage,
+                    rating: this.currentRating,
+                    comment: this.commentText.value.trim()
+                })
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                this.hasUnsavedChanges = false;
+                this.updateRatingStatus('saved');
+                // Update node's preview to show rating
+                this.updateNodePreviewRating(currentImage, this.currentRating);
+                setTimeout(() => {
+                    if (!this.hasUnsavedChanges) {
+                        this.ratingStatus.textContent = '';
+                    }
+                }, 2000);
+            } else {
+                this.updateRatingStatus('error');
+                console.error('Failed to save rating:', result.error);
+            }
+        } catch (error) {
+            this.updateRatingStatus('error');
+            console.error('Error saving rating:', error);
+        }
+    }
+
+    updateNodePreviewRating(filename, rating) {
+        // Update the node's stored rating info for preview display
+        if (!this.node.imageRatings) {
+            this.node.imageRatings = {};
+        }
+        if (rating) {
+            this.node.imageRatings[filename] = rating;
+        } else {
+            delete this.node.imageRatings[filename];
+        }
+        // Trigger canvas redraw to show rating overlay
+        if (app && app.graph) {
+            app.graph.setDirtyCanvas(true, true);
+        }
     }
 
     updateDisplay() {
@@ -355,6 +580,14 @@ class XJImageNavigator {
             </div>
         `;
 
+        // Reset rating UI
+        this.currentRating = null;
+        this.commentText.value = '';
+        this.highlightStars(0);
+        this.ratingText.textContent = '';
+        this.hasUnsavedChanges = false;
+        this.ratingStatus.textContent = '';
+
         try {
             const response = await fetch(
                 `/xjnodes/get_image_metadata?` +
@@ -366,6 +599,18 @@ class XJImageNavigator {
             if (response.ok) {
                 const data = await response.json();
                 this.renderMetadata(data);
+
+                // Load rating/comment from response
+                if (data.rating !== undefined && data.rating !== null) {
+                    this.currentRating = data.rating;
+                    this.highlightStars(this.currentRating);
+                    this.ratingText.textContent = this.getRatingLabel(this.currentRating);
+                    // Update node's preview rating
+                    this.updateNodePreviewRating(filename, this.currentRating);
+                }
+                if (data.comment) {
+                    this.commentText.value = data.comment;
+                }
             } else {
                 this.renderError("Failed to load metadata");
             }
@@ -1567,6 +1812,9 @@ app.registerExtension({
                     // Store preview image in custom property (not node.imgs to avoid ImagePreviewWidget)
                     node.previewImage = null;
 
+                    // Store current preview filename for draw function
+                    node.currentPreviewFilename = null;
+
                     // Custom draw function for image preview
                     const originalOnDrawForeground = node.onDrawForeground;
                     node.onDrawForeground = function(ctx) {
@@ -1622,18 +1870,43 @@ app.registerExtension({
                                 const x = sideMargin + (availableWidth - drawWidth) / 2;
                                 const y = availableY + (availableHeight - drawHeight) / 2;
 
-                                // Draw image
+                                // Draw image and rating in a single save/restore block
                                 ctx.save();
+
+                                // Draw image
                                 ctx.drawImage(img, x, y, drawWidth, drawHeight);
-                                ctx.restore();
 
                                 // Draw image dimensions text
-                                ctx.save();
                                 ctx.fillStyle = "#AAA";
                                 ctx.font = "10px monospace";
                                 ctx.textAlign = "center";
                                 const dimText = `${img.naturalWidth} × ${img.naturalHeight}`;
                                 ctx.fillText(dimText, node.size[0] / 2, y + drawHeight + 12);
+
+                                // Draw rating stars overlay if available
+                                const currentFilename = node.currentPreviewFilename;
+                                if (currentFilename && node.imageRatings && node.imageRatings[currentFilename]) {
+                                    const rating = node.imageRatings[currentFilename];
+
+                                    // Draw semi-transparent background for stars
+                                    const starText = '★'.repeat(rating) + '☆'.repeat(5 - rating);
+                                    ctx.font = "bold 14px monospace";
+                                    const textMetrics = ctx.measureText(starText);
+                                    const starWidth = textMetrics.width + 12;
+                                    const starHeight = 20;
+                                    const starX = x + drawWidth - starWidth - 4;
+                                    const starY = y + 4;
+
+                                    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+                                    ctx.fillRect(starX, starY, starWidth, starHeight);
+
+                                    // Draw gold stars
+                                    ctx.fillStyle = "#FFD700";
+                                    ctx.textAlign = "left";
+                                    ctx.textBaseline = "middle";
+                                    ctx.fillText(starText, starX + 6, starY + starHeight / 2);
+                                }
+
                                 ctx.restore();
                             }
                         }
@@ -1644,6 +1917,7 @@ app.registerExtension({
                         // Clear preview if no valid filename
                         if (!filename || filename === "" || filename === undefined || filename === null) {
                             node.previewImage = null;
+                            node.currentPreviewFilename = null;
                             app.graph.setDirtyCanvas(true, true);
                             return;
                         }
@@ -1653,8 +1927,9 @@ app.registerExtension({
                         let subdirectory = (subdirectoryWidget.value || "").trim();
                         subdirectory = subdirectory.replace(/^\/+|\/+$/g, '');
 
-                        // Clear current preview immediately
+                        // Clear current preview immediately and store filename
                         node.previewImage = null;
+                        node.currentPreviewFilename = filename;
 
                         // Create image preview
                         const img = new Image();
@@ -1670,12 +1945,37 @@ app.registerExtension({
                         img.onerror = () => {
                             console.error("Failed to load image from preview URL");
                             node.previewImage = null;
+                            node.currentPreviewFilename = null;
                             app.graph.setDirtyCanvas(true, true);
                         };
 
                         // Build API URL for image with preview optimization
                         const previewParams = app.getPreviewFormatParam ? app.getPreviewFormatParam() : '';
                         img.src = `/view?filename=${encodeURIComponent(filename)}&type=${directory}&subfolder=${encodeURIComponent(subdirectory)}${previewParams}&preview=true&channel=rgba&rand=${Math.random()}`;
+
+                        // Fetch rating metadata for this image
+                        (async () => {
+                            try {
+                                const response = await fetch(
+                                    `/xjnodes/get_image_metadata?` +
+                                    `directory=${encodeURIComponent(directory)}&` +
+                                    `subdirectory=${encodeURIComponent(subdirectory)}&` +
+                                    `filename=${encodeURIComponent(filename)}`
+                                );
+                                if (response.ok) {
+                                    const data = await response.json();
+                                    if (data.rating !== undefined && data.rating !== null) {
+                                        if (!node.imageRatings) {
+                                            node.imageRatings = {};
+                                        }
+                                        node.imageRatings[filename] = data.rating;
+                                        app.graph.setDirtyCanvas(true, true);
+                                    }
+                                }
+                            } catch (error) {
+                                // Silently fail for rating fetch
+                            }
+                        })();
                     };
 
                     // Function to update image list
@@ -1839,12 +2139,26 @@ app.registerExtension({
 
                     // Set initial node size to include space for preview image
                     // Default ComfyUI node width is around 210-320, we'll use a comfortable default
-                    // Height should accommodate: title bar (~30px) + widgets (~75px for 3 widgets + button) + preview area (~200px) + margins
-                    const defaultWidth = 320;
-                    const defaultHeight = 340; // Enough space for widgets + preview
+                    // Height should accommodate: title bar (~30px) + widgets (~125px for widgets + buttons) + preview area (~220px) + margins
+                    const defaultWidth = 340;
+                    const defaultHeight = 400; // Enough space for widgets + preview
 
-                    if (!node.size || node.size[0] < defaultWidth || node.size[1] < defaultHeight) {
-                        node.size = [defaultWidth, defaultHeight];
+                    // Force set size on initial creation - use setSize for proper LiteGraph handling
+                    const currentWidth = node.size ? node.size[0] : 0;
+                    const currentHeight = node.size ? node.size[1] : 0;
+
+                    if (currentWidth < defaultWidth || currentHeight < defaultHeight) {
+                        const newWidth = Math.max(currentWidth, defaultWidth);
+                        const newHeight = Math.max(currentHeight, defaultHeight);
+                        node.setSize([newWidth, newHeight]);
+                        // Also update the node's configure info so it persists
+                        if (node.configure) {
+                            node.size = [newWidth, newHeight];
+                        }
+                        // Force canvas redraw to apply new size
+                        if (app && app.graph) {
+                            app.graph.setDirtyCanvas(true, true);
+                        }
                     }
 
                     // Save the updateImageList method for refreshing later

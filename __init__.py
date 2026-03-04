@@ -9,6 +9,227 @@ from PIL import Image
 WEB_DIRECTORY = "./web"
 
 
+# Metadata keys for rating and comments
+RATING_KEY = "xj_rating"
+COMMENT_KEY = "xj_comment"
+
+
+def _get_image_path(directory, subdirectory, filename):
+    """Helper to construct and validate image path."""
+    if directory == "input":
+        base_dir = folder_paths.get_input_directory()
+    elif directory == "output":
+        base_dir = folder_paths.get_output_directory()
+    else:
+        return None
+
+    subdirectory = subdirectory.strip().strip("/")
+
+    if subdirectory:
+        image_path = os.path.join(base_dir, subdirectory, filename)
+    else:
+        image_path = os.path.join(base_dir, filename)
+
+    # Security check
+    if not os.path.abspath(image_path).startswith(os.path.abspath(base_dir)):
+        return None
+
+    return image_path
+
+
+def _read_rating_metadata(image_path):
+    """Extract xj_rating and xj_comment from image metadata."""
+    rating = None
+    comment = None
+
+    try:
+        img = Image.open(image_path)
+        ext = os.path.splitext(image_path)[1].lower()
+
+        if ext in [".png", ".webp"]:
+            # PNG/WebP: use text chunks
+            if hasattr(img, "text") and img.text:
+                rating = img.text.get(RATING_KEY)
+                comment = img.text.get(COMMENT_KEY)
+        elif ext in [".jpg", ".jpeg"]:
+            # JPEG: use EXIF UserComment
+            try:
+                import piexif
+
+                exif_dict = piexif.load(img.info.get("exif", b""))
+                user_comment = exif_dict.get("Exif", {}).get(piexif.ExifIFD.UserComment)
+                if user_comment:
+                    try:
+                        # Try to parse as JSON
+                        if isinstance(user_comment, bytes):
+                            user_comment = user_comment.decode("utf-8")
+                        data = json.loads(user_comment)
+                        rating = data.get("rating")
+                        comment = data.get("comment")
+                    except (json.JSONDecodeError, TypeError):
+                        # Legacy format: plain text comment
+                        comment = user_comment
+            except ImportError:
+                # Fallback: try _getexif
+                try:
+                    exif = img._getexif()
+                    if exif:
+                        user_comment = exif.get(37510)
+                        if user_comment:
+                            try:
+                                data = json.loads(user_comment)
+                                rating = data.get("rating")
+                                comment = data.get("comment")
+                            except (json.JSONDecodeError, TypeError):
+                                comment = user_comment
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        img.close()
+    except Exception:
+        pass
+
+    # Convert rating to int if possible
+    if rating is not None:
+        try:
+            rating = int(rating)
+        except (ValueError, TypeError):
+            rating = None
+
+    return rating, comment
+
+
+def _write_rating_metadata(image_path, rating, comment):
+    """Write xj_rating and xj_comment to image metadata."""
+    ext = os.path.splitext(image_path)[1].lower()
+
+    # Create temporary file path
+    temp_path = image_path + ".tmp"
+
+    try:
+        img = Image.open(image_path)
+
+        if ext == ".png":
+            # PNG: use text chunks
+            from PIL.PngImagePlugin import PngInfo
+
+            # Create PngInfo object
+            pnginfo = PngInfo()
+
+            # Copy existing metadata
+            if hasattr(img, "text") and img.text:
+                for key, value in img.text.items():
+                    pnginfo.add_text(key, str(value))
+
+            # Update with rating/comment
+            if rating is not None:
+                pnginfo.add_text(RATING_KEY, str(rating))
+            if comment:
+                pnginfo.add_text(COMMENT_KEY, comment)
+
+            # Save with metadata
+            img.save(temp_path, "PNG", pnginfo=pnginfo)
+
+        elif ext in [".jpg", ".jpeg"]:
+            # JPEG: use EXIF UserComment tag
+            # Build rating data as JSON
+            data = {}
+            if rating is not None:
+                data["rating"] = rating
+            if comment:
+                data["comment"] = comment
+
+            # Use piexif for reliable EXIF handling
+            try:
+                import piexif
+
+                # Load existing EXIF or create new
+                try:
+                    existing_exif = piexif.load(img.info.get("exif", b""))
+                except Exception:
+                    existing_exif = {"0th": {}, "1st": {}, "Exif": {}, "GPS": {}, "Interop": {}}
+
+                # Ensure Exif dict exists
+                if "Exif" not in existing_exif:
+                    existing_exif["Exif"] = {}
+
+                # Update UserComment (tag 37510)
+                if data:
+                    existing_exif["Exif"][piexif.ExifIFD.UserComment] = json.dumps(data, ensure_ascii=False).encode("utf-8")
+                else:
+                    existing_exif["Exif"].pop(piexif.ExifIFD.UserComment, None)
+
+                # Dump to bytes
+                exif_bytes = piexif.dump(existing_exif)
+                img.save(temp_path, "JPEG", exif=exif_bytes, quality=95)
+
+            except ImportError:
+                # Fallback: try to preserve existing EXIF bytes if possible
+                existing_exif_bytes = img.info.get("exif")
+                if existing_exif_bytes:
+                    img.save(temp_path, "JPEG", exif=existing_exif_bytes, quality=95)
+                else:
+                    img.save(temp_path, "JPEG", quality=95)
+
+        elif ext == ".webp":
+            # WebP: use EXIF if piexif available, otherwise just save without rating
+            try:
+                import piexif
+
+                # Load existing EXIF or create new
+                try:
+                    existing_exif = piexif.load(img.info.get("exif", b""))
+                except Exception:
+                    existing_exif = {"0th": {}, "1st": {}, "Exif": {}, "GPS": {}, "Interop": {}}
+
+                # Ensure Exif dict exists
+                if "Exif" not in existing_exif:
+                    existing_exif["Exif"] = {}
+
+                # Build rating data as JSON
+                data = {}
+                if rating is not None:
+                    data["rating"] = rating
+                if comment:
+                    data["comment"] = comment
+
+                # Update UserComment (tag 37510)
+                if data:
+                    existing_exif["Exif"][piexif.ExifIFD.UserComment] = json.dumps(data, ensure_ascii=False).encode("utf-8")
+                else:
+                    existing_exif["Exif"].pop(piexif.ExifIFD.UserComment, None)
+
+                # Dump to bytes
+                exif_bytes = piexif.dump(existing_exif)
+                img.save(temp_path, "WEBP", exif=exif_bytes, quality=95)
+
+            except ImportError:
+                # Fallback: save without rating metadata
+                existing_exif_bytes = img.info.get("exif")
+                if existing_exif_bytes:
+                    img.save(temp_path, "WEBP", exif=existing_exif_bytes, quality=95)
+                else:
+                    img.save(temp_path, "WEBP", quality=95)
+
+        else:
+            img.close()
+            return False, f"Unsupported file format: {ext}"
+
+        img.close()
+
+        # Replace original with temp file
+        os.replace(temp_path, image_path)
+        return True, None
+
+    except Exception as e:
+        # Clean up temp file if exists
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        return False, str(e)
+
+
 class WorkflowMetadataParser:
     """
     Extracts key parameters organized by node instance.
@@ -392,14 +613,97 @@ async def get_image_metadata(request):
         parser = WorkflowMetadataParser()
         parsed = parser.parse(raw_metadata)
 
+        # Extract rating/comment from image metadata
+        rating, comment = _read_rating_metadata(image_path)
+
         return web.json_response(
             {
                 "success": True,
                 "filename": filename,
                 "raw_metadata": raw_metadata,
                 "parsed": parsed,
+                "rating": rating,
+                "comment": comment,
             }
         )
+
+    except Exception as e:
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
+@server.PromptServer.instance.routes.post("/xjnodes/save_rating")
+async def save_rating(request):
+    """
+    Save rating and comment to an image file's metadata.
+    Stores xj_rating (1-5) and xj_comment in the image metadata.
+    """
+    try:
+        data = await request.json()
+        directory = data.get("directory", "input")
+        subdirectory = data.get("subdirectory", "")
+        filename = data.get("filename", "")
+        rating = data.get("rating")
+        comment = data.get("comment", "")
+
+        if not filename:
+            return web.json_response(
+                {"success": False, "error": "No filename provided"}, status=400
+            )
+
+        # Validate rating
+        if rating is not None:
+            try:
+                rating = int(rating)
+                if rating < 1 or rating > 5:
+                    return web.json_response(
+                        {"success": False, "error": "Rating must be between 1 and 5"},
+                        status=400,
+                    )
+            except (ValueError, TypeError):
+                return web.json_response(
+                    {"success": False, "error": "Invalid rating value"}, status=400
+                )
+
+        # Get and validate image path
+        image_path = _get_image_path(directory, subdirectory, filename)
+        if not image_path:
+            return web.json_response(
+                {"success": False, "error": "Invalid directory type"}, status=400
+            )
+
+        # Check file exists
+        if not os.path.exists(image_path):
+            return web.json_response(
+                {"success": False, "error": "File not found"}, status=404
+            )
+
+        # Check file extension
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in [".png", ".jpg", ".jpeg", ".webp"]:
+            return web.json_response(
+                {
+                    "success": False,
+                    "error": f"Unsupported file format: {ext}. Only PNG, JPEG, and WebP are supported.",
+                },
+                status=400,
+            )
+
+        # Write metadata
+        success, error = _write_rating_metadata(image_path, rating, comment)
+
+        if success:
+            return web.json_response(
+                {
+                    "success": True,
+                    "message": "Rating saved successfully",
+                    "rating": rating,
+                    "comment": comment,
+                }
+            )
+        else:
+            return web.json_response(
+                {"success": False, "error": error or "Failed to save rating"}, status=500
+            )
 
     except Exception as e:
         return web.json_response({"success": False, "error": str(e)}, status=500)
