@@ -429,9 +429,13 @@ class XJSegsRefineKMeans:
                 crop_img, mask, n_clusters, grow_pixels, similarity_threshold
             )
 
-            # Ensure mask has batch dimension (1, H, W) for SEGS compatibility
+            # Convert to numpy array for SEGS compatibility with Impact Pack nodes
+            if isinstance(refined_mask, torch.Tensor):
+                refined_mask = refined_mask.cpu().numpy()
+
+            # Ensure mask has shape (1, H, W) for SEGS compatibility
             if len(refined_mask.shape) == 2:
-                refined_mask = refined_mask.unsqueeze(0)
+                refined_mask = refined_mask[np.newaxis, ...]
 
             # Create new SEG with refined mask
             refined_seg = SEG(
@@ -529,9 +533,13 @@ class XJSegsRefineMorph:
                 crop_img, mask, grow_pixels, smooth_pixels, edge_threshold, use_edge_detection, color_threshold
             )
 
-            # Ensure mask has batch dimension (1, H, W) for SEGS compatibility
+            # Convert to numpy array for SEGS compatibility with Impact Pack nodes
+            if isinstance(refined_mask, torch.Tensor):
+                refined_mask = refined_mask.cpu().numpy()
+
+            # Ensure mask has shape (1, H, W) for SEGS compatibility
             if len(refined_mask.shape) == 2:
-                refined_mask = refined_mask.unsqueeze(0)
+                refined_mask = refined_mask[np.newaxis, ...]
 
             print(f"[XJSegsRefineMorph] Refined mask shape={refined_mask.shape}, sum={refined_mask.sum():.0f}")
 
