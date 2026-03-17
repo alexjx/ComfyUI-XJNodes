@@ -558,11 +558,275 @@ class XJSegsRefineMorph:
         return (create_segs(shape, refined_segments),)
 
 
+class XJSegsDilateMaskExpand:
+    """
+    Dilate mask in SEGS with expanded crop region to preserve full mask shape.
+    Unlike standard dilation that is limited by crop_region boundaries,
+    this node expands the crop_region to accommodate the full dilated mask.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "segs": ("SEGS",),
+                "dilation": ("INT", {"default": 10, "min": -512, "max": 512, "step": 1}),
+                "expand_buffer": ("INT", {"default": 0, "min": 0, "max": 256, "step": 1, "tooltip": "Extra pixels to expand beyond dilation amount. 0 = expand exactly enough for dilation."}),
+            },
+        }
+
+    RETURN_TYPES = ("SEGS",)
+    RETURN_NAMES = ("expanded_segs",)
+    CATEGORY = "XJNodes/segs"
+    FUNCTION = "dilate_expand"
+
+    def dilate_expand(self, segs, dilation, expand_buffer=0):
+        """
+        Dilate masks in SEGS while expanding crop_region to fit the full mask.
+
+        Args:
+            segs: SEGS tuple ((height, width), [SEG, ...])
+            dilation: Number of pixels to dilate (positive) or erode (negative)
+            expand_buffer: Additional pixels to expand beyond dilation amount
+
+        Returns:
+            SEGS with dilated masks and expanded crop regions
+        """
+        shape = get_segs_shape(segs)
+        seg_list = get_segs_list(segs)
+
+        if not seg_list:
+            return (segs,)
+
+        new_segments = []
+
+        for seg in seg_list:
+            # Get original crop region and dimensions
+            cx1, cy1, cx2, cy2 = seg.crop_region
+            crop_w, crop_h = cx2 - cx1, cy2 - cy1
+
+            # Get original bbox
+            bx1, by1, bx2, by2 = seg.bbox
+
+            # Calculate expansion needed
+            # We need to expand by at least abs(dilation) + expand_buffer
+            expand = abs(dilation) + expand_buffer
+
+            # Get the original mask
+            mask = seg.cropped_mask
+            if isinstance(mask, Image.Image):
+                mask = np.array(mask).astype(np.float32) / 255.0
+            elif isinstance(mask, torch.Tensor):
+                mask = mask.cpu().numpy()
+
+            # Ensure mask is 2D for processing
+            orig_mask_shape = mask.shape
+            if mask.ndim == 3:
+                if mask.shape[0] == 1:
+                    mask = mask.squeeze(0)
+                else:
+                    mask = mask.squeeze(-1)
+
+            # Pad the mask to accommodate dilation
+            # We pad on all sides by the expand amount
+            if dilation != 0:
+                padded_mask = np.pad(mask, ((expand, expand), (expand, expand)), mode='constant', constant_values=0)
+            else:
+                padded_mask = mask.copy()
+
+            # Apply dilation/erosion using scipy.ndimage with circular structuring element
+            if dilation != 0:
+                binary_mask = padded_mask > 0.5
+                # Create circular structuring element for natural shape preservation
+                # Using a disk shape (approximated by distance transform)
+                from scipy.ndimage import distance_transform_edt
+                import numpy as np
+
+                # Create a disk-shaped footprint
+                def disk_footprint(radius):
+                    """Create a circular footprint with given radius."""
+                    size = int(2 * radius + 1)
+                    y, x = np.ogrid[-radius:radius+1, -radius:radius+1]
+                    return x**2 + y**2 <= radius**2
+
+                footprint = disk_footprint(abs(dilation))
+
+                if dilation > 0:
+                    # Dilate using binary_dilation with circular footprint
+                    dilated_binary = ndimage.binary_dilation(binary_mask, structure=footprint)
+                else:
+                    # Erode using binary_erosion with circular footprint
+                    dilated_binary = ndimage.binary_erosion(binary_mask, structure=footprint)
+                dilated_mask = dilated_binary.astype(np.float32)
+            else:
+                dilated_mask = padded_mask
+
+            # Calculate new crop region coordinates
+            new_cx1 = max(0, cx1 - expand)
+            new_cy1 = max(0, cy1 - expand)
+            new_cx2 = min(shape[1], cx2 + expand)  # shape[1] is width
+            new_cy2 = min(shape[0], cy2 + expand)  # shape[0] is height
+
+            # Adjust mask if expansion was clamped at image boundaries
+            actual_expand_left = cx1 - new_cx1
+            actual_expand_top = cy1 - new_cy1
+            actual_expand_right = new_cx2 - cx2
+            actual_expand_bottom = new_cy2 - cy2
+
+            # Trim the dilated mask if we hit image boundaries
+            mask_h, mask_w = dilated_mask.shape
+            trim_top = expand - actual_expand_top
+            trim_bottom = mask_h - (expand - actual_expand_bottom)
+            trim_left = expand - actual_expand_left
+            trim_right = mask_w - (expand - actual_expand_right)
+
+            dilated_mask = dilated_mask[trim_top:trim_bottom, trim_left:trim_right]
+
+            # Calculate new bbox in the new crop region coordinate space
+            # The bbox shifts by the expansion amount (with boundary clamping adjustments)
+            new_bx1 = bx1 - cx1 + actual_expand_left
+            new_by1 = by1 - cy1 + actual_expand_top
+            new_bx2 = bx2 - cx1 + actual_expand_left
+            new_by2 = by2 - cy1 + actual_expand_top
+
+            # Ensure bbox is within new crop region
+            new_crop_w = new_cx2 - new_cx1
+            new_crop_h = new_cy2 - new_cy1
+            new_bx1 = max(0, min(new_bx1, new_crop_w - 1))
+            new_by1 = max(0, min(new_by1, new_crop_h - 1))
+            new_bx2 = max(new_bx1 + 1, min(new_bx2, new_crop_w))
+            new_by2 = max(new_by1 + 1, min(new_by2, new_crop_h))
+
+            # Ensure mask has shape (1, H, W) for SEGS compatibility
+            if len(dilated_mask.shape) == 2:
+                dilated_mask = dilated_mask[np.newaxis, ...]
+
+            # Create new cropped_image by expanding the original
+            # We need to extract the expanded region from the original image
+            cropped_image = seg.cropped_image
+            if cropped_image is not None:
+                if isinstance(cropped_image, torch.Tensor):
+                    img = cropped_image.cpu().numpy()
+                else:
+                    img = np.array(cropped_image)
+
+                # Handle different image formats (H, W, C) or (C, H, W)
+                if img.ndim == 3:
+                    if img.shape[0] == 3 or img.shape[0] == 4:  # (C, H, W) format
+                        # Pad each channel
+                        img = np.transpose(img, (1, 2, 0))  # Convert to (H, W, C)
+                        padded_img = np.pad(img, ((expand, expand), (expand, expand), (0, 0)), mode='constant', constant_values=0)
+                        # Apply trimming
+                        padded_img = padded_img[trim_top:trim_bottom, trim_left:trim_right]
+                        padded_img = np.transpose(padded_img, (2, 0, 1))  # Convert back to (C, H, W)
+                    else:  # (H, W, C) format
+                        padded_img = np.pad(img, ((expand, expand), (expand, expand), (0, 0)), mode='constant', constant_values=0)
+                        padded_img = padded_img[trim_top:trim_bottom, trim_left:trim_right]
+
+                    cropped_image = torch.from_numpy(padded_img) if isinstance(seg.cropped_image, torch.Tensor) else padded_img
+
+            # Create new SEG with expanded dimensions
+            new_seg = SEG(
+                cropped_image=cropped_image,
+                cropped_mask=dilated_mask,
+                confidence=seg.confidence,
+                crop_region=(new_cx1, new_cy1, new_cx2, new_cy2),
+                bbox=(new_bx1, new_by1, new_bx2, new_by2),
+                label=seg.label,
+                control_net_wrapper=seg.control_net_wrapper,
+            )
+            new_segments.append(new_seg)
+
+        return (create_segs(shape, new_segments),)
+
+
+class XJMaskDilateCircular:
+    """
+    Dilate or erode a mask using a circular structuring element.
+    Preserves natural rounded shapes instead of creating square corners.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "mask": ("MASK",),
+                "dilation": ("INT", {"default": 10, "min": -512, "max": 512, "step": 1}),
+            },
+        }
+
+    RETURN_TYPES = ("MASK",)
+    RETURN_NAMES = ("dilated_mask",)
+    CATEGORY = "XJNodes/segs"
+    FUNCTION = "dilate_circular"
+
+    def dilate_circular(self, mask, dilation):
+        """
+        Dilate/erode mask using circular structuring element.
+
+        Args:
+            mask: Input mask tensor (B, H, W) or (H, W)
+            dilation: Positive to dilate, negative to erode
+
+        Returns:
+            Dilated/eroded mask with preserved circular shapes
+        """
+        import torch
+
+        # Handle batch dimension
+        if len(mask.shape) == 3:
+            results = []
+            for i in range(mask.shape[0]):
+                m = mask[i]
+                result = self._dilate_single(m, dilation)
+                results.append(result)
+            return (torch.stack(results),)
+        else:
+            result = self._dilate_single(mask, dilation)
+            return (result.unsqueeze(0),)
+
+    def _dilate_single(self, mask, dilation):
+        """Process a single mask."""
+        import torch
+        import numpy as np
+        from scipy import ndimage
+
+        if dilation == 0:
+            return mask
+
+        # Convert to numpy
+        if isinstance(mask, torch.Tensor):
+            mask_np = mask.cpu().numpy()
+        else:
+            mask_np = np.array(mask)
+
+        # Ensure 2D
+        if mask_np.ndim > 2:
+            mask_np = mask_np.squeeze()
+
+        binary_mask = mask_np > 0.5
+
+        # Create circular footprint
+        radius = abs(dilation)
+        size = int(2 * radius + 1)
+        y, x = np.ogrid[-radius:radius+1, -radius:radius+1]
+        footprint = x**2 + y**2 <= radius**2
+
+        if dilation > 0:
+            result = ndimage.binary_dilation(binary_mask, structure=footprint)
+        else:
+            result = ndimage.binary_erosion(binary_mask, structure=footprint)
+
+        return torch.from_numpy(result.astype(np.float32))
+
+
 NODE_CLASS_MAPPINGS = {
     "XJMaskRefineKMeans": XJMaskRefineKMeans,
     "XJMaskRefineMorph": XJMaskRefineMorph,
     "XJSegsRefineKMeans": XJSegsRefineKMeans,
     "XJSegsRefineMorph": XJSegsRefineMorph,
+    "XJSegsDilateMaskExpand": XJSegsDilateMaskExpand,
+    "XJMaskDilateCircular": XJMaskDilateCircular,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -570,4 +834,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "XJMaskRefineMorph": "Mask Refine (Morph)",
     "XJSegsRefineKMeans": "SEGS Refine (K-Means)",
     "XJSegsRefineMorph": "SEGS Refine (Morph)",
+    "XJSegsDilateMaskExpand": "Dilate Mask (SEGS Expand)",
+    "XJMaskDilateCircular": "Mask Dilate (Circular)",
 }
