@@ -438,6 +438,174 @@ def feather_mask(mask: Tensor, feather_pixels: int):
     return blurred
 
 
+def gaussian_blur_tensor(image: Tensor, radius: int):
+    """
+    Apply Gaussian blur to an image tensor.
+
+    Args:
+        image: Image tensor (B, H, W, C) in [0, 1]
+        radius: Blur radius in pixels
+
+    Returns:
+        Blurred image tensor (B, H, W, C)
+    """
+    if radius <= 0:
+        return image
+
+    import torch.nn.functional as F
+
+    kernel_size = radius * 2 + 1
+    sigma = max(radius / 3.0, 1e-6)
+
+    x = torch.arange(kernel_size, dtype=image.dtype, device=image.device) - radius
+    gauss = torch.exp(-x.pow(2) / (2 * sigma**2))
+    gauss = gauss / gauss.sum()
+
+    kernel_2d = gauss.unsqueeze(0) * gauss.unsqueeze(1)
+    kernel_2d = kernel_2d / kernel_2d.sum()
+
+    # Convert to (B, C, H, W) for depthwise conv
+    image_chw = image.permute(0, 3, 1, 2)
+    channels = image_chw.shape[1]
+
+    kernel = kernel_2d.view(1, 1, kernel_size, kernel_size)
+    kernel = kernel.repeat(channels, 1, 1, 1)
+
+    # Reflect padding gives better edge behavior; fallback for tiny images
+    h, w = image_chw.shape[2], image_chw.shape[3]
+    pad_mode = "reflect" if min(h, w) > radius else "replicate"
+    padded = F.pad(image_chw, (radius, radius, radius, radius), mode=pad_mode)
+
+    blurred = F.conv2d(padded, kernel, groups=channels)
+    return blurred.permute(0, 2, 3, 1)
+
+
+def apply_blur_or_sharpen(image: Tensor, mode: str, radius: int, strength: float):
+    """
+    Apply blur or sharpen operation.
+
+    Args:
+        image: Image tensor (B, H, W, C) in [0, 1]
+        mode: "blur" or "sharpen"
+        radius: Blur radius used by both modes
+        strength: Effect strength
+            - blur: blend amount [0, 1]
+            - sharpen: unsharp amount [0, 2]
+
+    Returns:
+        Processed image tensor (B, H, W, C)
+    """
+    if strength <= 0.0 or radius <= 0:
+        return image
+
+    blurred = gaussian_blur_tensor(image, radius)
+
+    if mode == "blur":
+        amount = min(max(strength, 0.0), 1.0)
+        result = image * (1.0 - amount) + blurred * amount
+    else:
+        # Unsharp mask: original + amount * (original - blurred)
+        result = image + strength * (image - blurred)
+
+    return result.clamp(0.0, 1.0)
+
+
+class BlurSharpenDetailerHook:
+    """
+    Detailer hook that applies blur/sharpen to enhanced images before paste-back.
+    """
+
+    def __init__(self, mode="blur", radius=1, strength=1.0, feather=0):
+        self.mode = mode
+        self.radius = radius
+        self.strength = strength
+        self.feather = feather
+        self.saved_mask = None
+
+    def set_steps(self, info):
+        pass
+
+    def post_decode(self, pixels):
+        """
+        Apply blur/sharpen after VAE decode, then blend with seg mask.
+        """
+        original = pixels
+        processed = apply_blur_or_sharpen(
+            image=pixels,
+            mode=self.mode,
+            radius=self.radius,
+            strength=self.strength
+        )
+
+        if self.saved_mask is not None:
+            import torch.nn.functional as F
+
+            if self.saved_mask.shape[1:3] != pixels.shape[1:3]:
+                mask_resized = self.saved_mask.unsqueeze(1)
+                mask_resized = F.interpolate(
+                    mask_resized,
+                    size=pixels.shape[1:3],
+                    mode="bilinear",
+                    align_corners=False
+                )
+                mask_resized = mask_resized.squeeze(1)
+            else:
+                mask_resized = self.saved_mask
+
+            blend_mask = feather_mask(mask_resized, self.feather).unsqueeze(-1)
+            result = processed * blend_mask + original * (1 - blend_mask)
+            self.saved_mask = None
+        else:
+            result = processed
+
+        return result.clamp(0.0, 1.0)
+
+    def post_upscale(self, pixels, mask=None):
+        """Save mask for later use in post_decode."""
+        if mask is not None:
+            self.saved_mask = mask.clone()
+        return pixels
+
+    def post_encode(self, samples):
+        return samples
+
+    def pre_decode(self, samples):
+        return samples
+
+    def pre_ksample(self, model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent, denoise):
+        return model, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent, denoise
+
+    def post_crop_region(self, w, h, item_bbox, crop_region):
+        return crop_region
+
+    def touch_scaled_size(self, w, h):
+        return w, h
+
+    def cycle_latent(self, latent):
+        return latent
+
+    def post_detection(self, segs):
+        return segs
+
+    def post_paste(self, image):
+        return image
+
+    def get_custom_noise(self, seed, noise, is_touched):
+        return noise, is_touched
+
+    def get_custom_sampler(self):
+        return None
+
+    def get_skip_sampling(self):
+        return False
+
+    def should_retry_patch(self, patch):
+        return False
+
+    def should_skip_by_cnet_image(self, cnet_image):
+        return False
+
+
 def normalize_gray_tensor(image: Tensor):
     """
     Apply histogram-based auto-level normalization to a grayscale image tensor.
@@ -1188,11 +1356,79 @@ class XJSegsAutoAdjustHookProvider:
         return (hook,)
 
 
+class XJSegsBlurHookProvider:
+    """
+    Create a blur hook for SEGS detailer.
+
+    Applies blur after decode and before patch paste-back.
+    If a seg mask is available, effect is constrained to masked area.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "radius": ("INT", {"default": 1, "min": 1, "max": 25, "step": 1}),
+                "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "feather": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1}),
+            },
+        }
+
+    RETURN_TYPES = ("DETAILER_HOOK",)
+    RETURN_NAMES = ("hook",)
+    CATEGORY = "XJNodes/segs/hooks"
+    FUNCTION = "create_hook"
+
+    def create_hook(self, radius, strength, feather):
+        hook = BlurSharpenDetailerHook(
+            mode="blur",
+            radius=radius,
+            strength=strength,
+            feather=feather
+        )
+        return (hook,)
+
+
+class XJSegsSharpenHookProvider:
+    """
+    Create a sharpen hook for SEGS detailer.
+
+    Applies sharpen after decode and before patch paste-back.
+    If a seg mask is available, effect is constrained to masked area.
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "radius": ("INT", {"default": 1, "min": 1, "max": 25, "step": 1}),
+                "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}),
+                "feather": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1}),
+            },
+        }
+
+    RETURN_TYPES = ("DETAILER_HOOK",)
+    RETURN_NAMES = ("hook",)
+    CATEGORY = "XJNodes/segs/hooks"
+    FUNCTION = "create_hook"
+
+    def create_hook(self, radius, strength, feather):
+        hook = BlurSharpenDetailerHook(
+            mode="sharpen",
+            radius=radius,
+            strength=strength,
+            feather=feather
+        )
+        return (hook,)
+
+
 NODE_CLASS_MAPPINGS = {
     "XJSegsColorMatchHookProvider": XJSegsColorMatchHookProvider,
     "XJSegsColorCorrectRGBHookProvider": XJSegsColorCorrectRGBHookProvider,
     "XJSegsColorCorrectHSVHookProvider": XJSegsColorCorrectHSVHookProvider,
     "XJSegsAutoAdjustHookProvider": XJSegsAutoAdjustHookProvider,
+    "XJSegsBlurHookProvider": XJSegsBlurHookProvider,
+    "XJSegsSharpenHookProvider": XJSegsSharpenHookProvider,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1200,4 +1436,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "XJSegsColorCorrectRGBHookProvider": "SEGS Color Correct RGB Hook",
     "XJSegsColorCorrectHSVHookProvider": "SEGS Color Correct HSV Hook",
     "XJSegsAutoAdjustHookProvider": "SEGS Auto Adjust Hook",
+    "XJSegsBlurHookProvider": "SEGS Blur Hook",
+    "XJSegsSharpenHookProvider": "SEGS Sharpen Hook",
 }
