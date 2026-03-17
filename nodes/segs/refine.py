@@ -24,9 +24,9 @@ class XJMaskRefineKMeans:
             "required": {
                 "image": ("IMAGE",),
                 "mask": ("MASK",),
-                "n_clusters": ("INT", {"default": 3, "min": 2, "max": 10, "step": 1}),
-                "grow_pixels": ("INT", {"default": 50, "min": 0, "max": 200, "step": 1}),
-                "similarity_threshold": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "n_clusters": ("INT", {"default": 3, "min": 2, "max": 10, "step": 1, "tooltip": "Number of k-means clusters to use for color segmentation. More clusters can capture more color variation but may be slower."}),
+                "grow_pixels": ("INT", {"default": 50, "min": 0, "max": 200, "step": 1, "tooltip": "Maximum pixels to grow the mask. Use with similarity_threshold to control how far the growth extends."}),
+                "similarity_threshold": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "Threshold for including similar clusters (0-1). Higher = more strict. Use to include clusters that are close in color to the original mask, for smoother boundaries."}),
             },
         }
 
@@ -200,10 +200,10 @@ class XJMaskRefineMorph:
             "required": {
                 "image": ("IMAGE",),
                 "mask": ("MASK",),
-                "grow_pixels": ("INT", {"default": 50, "min": 0, "max": 200, "step": 1}),
-                "smooth_pixels": ("INT", {"default": 3, "min": 0, "max": 20, "step": 1}),
-                "edge_threshold": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 1.0, "step": 0.05}),
-                "use_edge_detection": ("BOOLEAN", {"default": True}),
+                "grow_pixels": ("INT", {"default": 50, "min": 0, "max": 200, "step": 1, "tooltip": "Number of pixels to dilate/grow. Use with edge_threshold and color_threshold to control growth."}),
+                "smooth_pixels": ("INT", {"default": 3, "min": 0, "max": 20, "step": 1, "tooltip": "Sigma for Gaussian smoothing. Higher values create smoother but less detailed edges."}),
+                "edge_threshold": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "Threshold for edge-based refinement (0-1). Lower values are more sensitive to edges. Use with use_edge_detection to control growth at edges."}),
+                "use_edge_detection": ("BOOLEAN", {"default": True, "tooltip": "Whether to use edge detection to limit growth. Disable for similar colors or when edge detection is too aggressive."}),
                 "color_threshold": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "If > 0, stop growth when pixel color differs from mask average by more than this threshold (0-1). Use instead of edge detection for similar colors."}),
             },
         }
@@ -367,9 +367,9 @@ class XJSegsRefineKMeans:
             "required": {
                 "segs": ("SEGS",),
                 "image": ("IMAGE",),
-                "n_clusters": ("INT", {"default": 3, "min": 2, "max": 10, "step": 1}),
-                "grow_pixels": ("INT", {"default": 50, "min": 0, "max": 200, "step": 1}),
-                "similarity_threshold": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "n_clusters": ("INT", {"default": 3, "min": 2, "max": 10, "step": 1, "tooltip": "Number of k-means clusters to use for color segmentation. More clusters can capture more color variation but may be slower."}),
+                "grow_pixels": ("INT", {"default": 50, "min": 0, "max": 200, "step": 1, "tooltip": "Maximum pixels to grow the mask. Use with similarity_threshold to control how far the growth extends."}),
+                "similarity_threshold": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "Threshold for including similar clusters (0-1). Higher = more strict. Use to include clusters that are close in color to the original mask, for smoother boundaries."}),
             },
         }
 
@@ -464,11 +464,11 @@ class XJSegsRefineMorph:
             "required": {
                 "segs": ("SEGS",),
                 "image": ("IMAGE",),
-                "grow_pixels": ("INT", {"default": 50, "min": 0, "max": 200, "step": 1}),
-                "smooth_pixels": ("INT", {"default": 3, "min": 0, "max": 20, "step": 1}),
-                "edge_threshold": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 1.0, "step": 0.05}),
-                "use_edge_detection": ("BOOLEAN", {"default": True}),
-                "color_threshold": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "If > 0, stop growth when pixel color differs from mask average by more than this threshold (0-1). Use instead of edge detection for similar colors."}),
+                "grow_pixels": ("INT", {"default": 50, "min": 0, "max": 200, "step": 1, "tooltip": "Number of pixels to dilate/grow. Use with edge_threshold and color_threshold to control growth."}),
+                "smooth_pixels": ("INT", {"default": 3, "min": 0, "max": 20, "step": 1, "tooltip": "Sigma for Gaussian smoothing. Higher values create smoother but less detailed edges."}),
+                "edge_threshold": ("FLOAT", {"default": 0.3, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "Threshold for edge-based refinement (0-1). Lower values are more sensitive to edges. Use with use_edge_detection to control growth at edges."}),
+                "use_edge_detection": ("BOOLEAN", {"default": True, "tooltip": "Whether to use edge detection to limit growth. Disable for similar colors or when edge detection is too aggressive."}),
+                "color_threshold": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "If > 0, stop growth when pixel color differs from mask average by more than this threshold (0-1). Use instead of edge detection for similar colors."}),
             },
         }
 
