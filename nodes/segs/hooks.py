@@ -455,7 +455,8 @@ def gaussian_blur_tensor(image: Tensor, radius: int):
     import torch.nn.functional as F
 
     kernel_size = radius * 2 + 1
-    sigma = max(radius / 3.0, 1e-6)
+    # Map radius directly to sigma so radius=1 has a noticeable effect.
+    sigma = max(float(radius), 1e-6)
 
     x = torch.arange(kernel_size, dtype=image.dtype, device=image.device) - radius
     gauss = torch.exp(-x.pow(2) / (2 * sigma**2))
@@ -1369,7 +1370,7 @@ class XJSegsBlurHookProvider:
         return {
             "required": {
                 "radius": ("INT", {"default": 1, "min": 1, "max": 25, "step": 1}),
-                "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05}),
+                "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 8.0, "step": 0.01}),
                 "feather": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1}),
             },
         }
@@ -1401,8 +1402,8 @@ class XJSegsSharpenHookProvider:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "radius": ("INT", {"default": 1, "min": 1, "max": 25, "step": 1}),
-                "strength": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2.0, "step": 0.05}),
+                "radius": ("INT", {"default": 2, "min": 1, "max": 25, "step": 1}),
+                "strength": ("FLOAT", {"default": 1.5, "min": 0.0, "max": 8.0, "step": 0.01}),
                 "feather": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1}),
             },
         }
