@@ -153,7 +153,8 @@ class XJImageNavigator {
             opacity: 0.5;
         `;
         this.keyboardHelp.innerHTML = `
-            <div style="margin-bottom: 4px;"><strong style="color: #fff;">A</strong> Back | <strong style="color: #fff;">D</strong> Forward</div>
+            <div style="margin-bottom: 4px;"><strong style="color: #fff;">Left</strong> Back | <strong style="color: #fff;">Right</strong> Forward</div>
+            <div style="margin-bottom: 4px;"><strong style="color: #fff;">Del</strong> Delete</div>
             <div style="margin-bottom: 4px;"><strong style="color: #fff;">Enter / Click</strong> Select & Exit</div>
             <div><strong style="color: #fff;">ESC</strong> Exit</div>
         `;
@@ -348,13 +349,18 @@ class XJImageNavigator {
             const key = e.key.toLowerCase();
 
             switch(key) {
-                case 'a':  // Backward
+                case 'arrowleft':  // Backward
                     e.preventDefault();
                     this.navigate(-1);
                     break;
-                case 'd':  // Forward
+                case 'arrowright':  // Forward
                     e.preventDefault();
                     this.navigate(1);
+                    break;
+                case 'delete':
+                case 'del':
+                    e.preventDefault();
+                    this.handleDelete();
                     break;
                 case 'enter':
                     e.preventDefault();
