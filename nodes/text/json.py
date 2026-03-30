@@ -93,7 +93,7 @@ class XJJSONExtractor:
             if remaining_keys and isinstance(current, str):
                 # Try to parse as JSON
                 try:
-                    current = json.loads(current)
+                    current = self._parse_nested_json(current)
                 except json.JSONDecodeError as e:
                     raise ValueError(
                         f"Failed to parse nested JSON at path '{'.'.join(keys[: i + 1])}'. "
@@ -102,6 +102,59 @@ class XJJSONExtractor:
                     )
 
         return current
+
+    def _parse_nested_json(self, value):
+        """Parse nested JSON string with a small compatibility fallback."""
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError as e:
+            fixed = self._remove_trailing_commas(value)
+            if fixed != value:
+                return json.loads(fixed)
+            raise e
+
+    def _remove_trailing_commas(self, value):
+        """
+        Remove commas immediately before `}` or `]` outside of strings.
+        Keeps content inside quoted strings unchanged.
+        """
+        out = []
+        i = 0
+        in_string = False
+        escaped = False
+        length = len(value)
+
+        while i < length:
+            ch = value[i]
+            if in_string:
+                out.append(ch)
+                if escaped:
+                    escaped = False
+                elif ch == "\\":
+                    escaped = True
+                elif ch == '"':
+                    in_string = False
+                i += 1
+                continue
+
+            if ch == '"':
+                in_string = True
+                out.append(ch)
+                i += 1
+                continue
+
+            if ch == ",":
+                j = i + 1
+                while j < length and value[j] in " \t\r\n":
+                    j += 1
+                if j < length and value[j] in "}]":
+                    i += 1
+                    continue
+
+            out.append(ch)
+            i += 1
+
+        return "".join(out)
 
     def _to_string(self, value):
         """Convert to string or None"""
