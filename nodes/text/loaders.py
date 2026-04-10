@@ -1,9 +1,7 @@
 import os
 import random
 import string
-import hashlib
 import folder_paths
-from collections import deque
 
 
 def parse_text_blocks(text):
@@ -63,10 +61,6 @@ def parse_text_blocks(text):
 
 
 class XJRandomTextFromList:
-    # Class-level memory to track recently selected items per unique list
-    # Key: hash of list content, Value: deque of recently selected indices
-    _selection_memories = {}  # Dict of deques, one per unique list
-
     @staticmethod
     def parse_index_list(index_string):
         """
@@ -160,84 +154,24 @@ class XJRandomTextFromList:
                     f"No valid indices in range for list with {len(text_list)} items"
                 )
 
-            # Create a unique key for this list based on its content and valid indices
-            list_key = hashlib.md5(
-                ("|".join(text_list) + "||" + index_list).encode("utf-8")
-            ).hexdigest()
-
-            # Get or create memory deque for this specific list
-            if list_key not in self._selection_memories:
-                self._selection_memories[list_key] = deque(maxlen=10)
-            memory = self._selection_memories[list_key]
-
             # Create a Random object with the seed for better randomness
             rng = random.Random(seed)
 
             # Convert to 0-indexed for accessing text_list
             available_indices = [i - 1 for i in valid_indices]
 
-            # Apply anti-repetition logic (same as random mode)
-            memory_size = max(1, len(available_indices) // 2 - 1)
-            max_retries = min(len(available_indices), 50)
-            selected_index = None
-
-            for _ in range(max_retries):
-                candidate_index = rng.choice(available_indices)
-                if candidate_index not in list(memory)[-memory_size:]:
-                    selected_index = candidate_index
-                    break
-
-            # If all retries failed (unlikely), just use a random selection
-            if selected_index is None:
-                selected_index = rng.choice(available_indices)
-
-            # Add selected index to this list's memory
-            memory.append(selected_index)
-
+            selected_index = rng.choice(available_indices)
             selected_text = text_list[selected_index]
         else:  # random
-            # Create a unique key for this list based on its content
-            list_key = hashlib.md5("|".join(text_list).encode("utf-8")).hexdigest()
-
-            # Get or create memory deque for this specific list
-            if list_key not in self._selection_memories:
-                self._selection_memories[list_key] = deque(maxlen=10)
-            memory = self._selection_memories[list_key]
-
             # Create a Random object with the seed for better randomness
             rng = random.Random(seed)
-
-            # Calculate memory size (less than half of list size)
-            memory_size = max(1, len(text_list) // 2 - 1)
-
-            # Try to select an index not in recent memory
-            max_retries = min(len(text_list), 50)  # Limit retries
-            selected_index = None
-
-            for _ in range(max_retries):
-                candidate_index = rng.randint(0, len(text_list) - 1)
-                # Check if candidate index is in recent memory
-                if candidate_index not in list(memory)[-memory_size:]:
-                    selected_index = candidate_index
-                    break
-
-            # If all retries failed (unlikely), just use a random index
-            if selected_index is None:
-                selected_index = rng.randint(0, len(text_list) - 1)
-
-            # Add selected index to this list's memory
-            memory.append(selected_index)
-
+            selected_index = rng.randint(0, len(text_list) - 1)
             selected_text = text_list[selected_index]
 
         return (selected_text,)
 
 
 class XJRandomTextFromFile:
-    # Class-level memory to track recently selected items per unique file
-    # Key: hash of file content, Value: deque of recently selected indices
-    _selection_memories = {}  # Dict of deques, one per unique file
-
     @classmethod
     def INPUT_TYPES(s):
         # Enumerate .txt and .md files from input directory
@@ -304,38 +238,9 @@ class XJRandomTextFromFile:
             # If type is fixed, return the item at 'choice' index with wrap-around
             selected_text = text_list[(choice - 1) % len(text_list)]
         else:
-            # Create a unique key for this file based on its content
-            list_key = hashlib.md5("|".join(text_list).encode("utf-8")).hexdigest()
-
-            # Get or create memory deque for this specific file
-            if list_key not in self._selection_memories:
-                self._selection_memories[list_key] = deque(maxlen=10)
-            memory = self._selection_memories[list_key]
-
             # Create a Random object with the seed for better randomness
             rng = random.Random(seed)
-
-            # Calculate memory size (less than half of list size)
-            memory_size = max(1, len(text_list) // 2 - 1)
-
-            # Try to select an index not in recent memory
-            max_retries = min(len(text_list), 50)  # Limit retries
-            selected_index = None
-
-            for _ in range(max_retries):
-                candidate_index = rng.randint(0, len(text_list) - 1)
-                # Check if candidate index is in recent memory
-                if candidate_index not in list(memory)[-memory_size:]:
-                    selected_index = candidate_index
-                    break
-
-            # If all retries failed (unlikely), just use a random index
-            if selected_index is None:
-                selected_index = rng.randint(0, len(text_list) - 1)
-
-            # Add selected index to this file's memory
-            memory.append(selected_index)
-
+            selected_index = rng.randint(0, len(text_list) - 1)
             selected_text = text_list[selected_index]
 
         return (selected_text,)
