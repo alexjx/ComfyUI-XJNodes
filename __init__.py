@@ -101,12 +101,16 @@ def _read_rating_metadata(image_path):
     return rating, comment
 
 
+def _get_rating_write_paths(image_path):
+    """Return the final write target and temp path for a metadata save."""
+    write_path = os.path.realpath(image_path) if os.path.islink(image_path) else image_path
+    return write_path, write_path + ".tmp"
+
+
 def _write_rating_metadata(image_path, rating, comment):
     """Write xj_rating and xj_comment to image metadata."""
     ext = os.path.splitext(image_path)[1].lower()
-
-    # Create temporary file path
-    temp_path = image_path + ".tmp"
+    write_path, temp_path = _get_rating_write_paths(image_path)
 
     try:
         img = Image.open(image_path)
@@ -219,8 +223,8 @@ def _write_rating_metadata(image_path, rating, comment):
 
         img.close()
 
-        # Replace original with temp file
-        os.replace(temp_path, image_path)
+        # Preserve symlinks by replacing the resolved target, not the link path itself.
+        os.replace(temp_path, write_path)
         return True, None
 
     except Exception as e:
