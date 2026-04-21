@@ -1,5 +1,10 @@
 import json
 
+try:
+    from ...json_compat import loads as loads_json_compat
+except ImportError:
+    from json_compat import loads as loads_json_compat
+
 
 class XJJSONExtractor:
     """
@@ -41,7 +46,10 @@ class XJJSONExtractor:
             return (None, None, None, None)
 
         # Step 2 & 3: Navigate path and extract value
-        value = self._navigate_path(data, key_path)
+        try:
+            value = self._navigate_path(data, key_path)
+        except ValueError:
+            return (None, None, None, None)
         if value is None:
             return (None, None, None, None)
 
@@ -104,57 +112,8 @@ class XJJSONExtractor:
         return current
 
     def _parse_nested_json(self, value):
-        """Parse nested JSON string with a small compatibility fallback."""
-        try:
-            return json.loads(value)
-        except json.JSONDecodeError as e:
-            fixed = self._remove_trailing_commas(value)
-            if fixed != value:
-                return json.loads(fixed)
-            raise e
-
-    def _remove_trailing_commas(self, value):
-        """
-        Remove commas immediately before `}` or `]` outside of strings.
-        Keeps content inside quoted strings unchanged.
-        """
-        out = []
-        i = 0
-        in_string = False
-        escaped = False
-        length = len(value)
-
-        while i < length:
-            ch = value[i]
-            if in_string:
-                out.append(ch)
-                if escaped:
-                    escaped = False
-                elif ch == "\\":
-                    escaped = True
-                elif ch == '"':
-                    in_string = False
-                i += 1
-                continue
-
-            if ch == '"':
-                in_string = True
-                out.append(ch)
-                i += 1
-                continue
-
-            if ch == ",":
-                j = i + 1
-                while j < length and value[j] in " \t\r\n":
-                    j += 1
-                if j < length and value[j] in "}]":
-                    i += 1
-                    continue
-
-            out.append(ch)
-            i += 1
-
-        return "".join(out)
+        """Parse nested JSON string with compatibility fallbacks."""
+        return loads_json_compat(value)
 
     def _to_string(self, value):
         """Convert to string or None"""

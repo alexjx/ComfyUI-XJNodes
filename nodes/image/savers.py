@@ -9,6 +9,11 @@ from PIL.PngImagePlugin import PngInfo
 import comfy.model_management
 import folder_paths
 
+try:
+    from ...json_compat import normalize as normalize_json_compat
+except ImportError:
+    from json_compat import normalize as normalize_json_compat
+
 
 def parse_filename_tokens(text):
     """Parse filename tokens similar to WAS nodes"""
@@ -48,6 +53,17 @@ def parse_filename_tokens(text):
     text = re.sub(r"\[time\((.*?)\)\]", replace_time_format, text)
 
     return text
+
+
+def normalize_metadata(metadata):
+    """Return normalized metadata JSON or None when it cannot be repaired."""
+    if not metadata or not isinstance(metadata, str):
+        return None
+
+    normalized = normalize_json_compat(metadata)
+    if normalized is None:
+        print("[XJNodes] Skip invalid xj_metadata: unable to normalize JSON")
+    return normalized
 
 
 class XJSaveImageWithMetadata:
@@ -116,6 +132,8 @@ class XJSaveImageWithMetadata:
         # Parse tokens in filename_prefix and output_path
         filename_prefix = parse_filename_tokens(filename_prefix)
         output_path = parse_filename_tokens(output_path)
+
+        metadata = normalize_metadata(metadata)
 
         # Setup output path
         if output_path in [None, "", "none", "."]:

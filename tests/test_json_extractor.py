@@ -28,9 +28,27 @@ class TestJSONExtractor(unittest.TestCase):
         out = self.extractor.extract(json.dumps(payload), "xj_metadata.prompt")
         self.assertEqual(out[0], "hello")
 
+    def test_extract_nested_json_with_unescaped_quotes_is_repaired(self):
+        nested = (
+            '{"face":"55193591.jpg","prompt":"A girl says "hello" loudly",'
+            '"steps":20}'
+        )
+        payload = {"xj_metadata": nested}
+
+        prompt_out = self.extractor.extract(json.dumps(payload), "xj_metadata.prompt")
+        steps_out = self.extractor.extract(json.dumps(payload), "xj_metadata.steps")
+
+        self.assertEqual(prompt_out[0], 'A girl says "hello" loudly')
+        self.assertEqual(steps_out[2], 20)
+
     def test_extract_invalid_path_returns_none_tuple(self):
         payload = {"xj_metadata": json.dumps({"prompt": "hello"})}
         out = self.extractor.extract(json.dumps(payload), "xj_metadata.missing")
+        self.assertEqual(out, (None, None, None, None))
+
+    def test_extract_unrepairable_nested_json_returns_none_tuple(self):
+        payload = {"xj_metadata": '{"prompt": ???}'}
+        out = self.extractor.extract(json.dumps(payload), "xj_metadata.prompt")
         self.assertEqual(out, (None, None, None, None))
 
 
