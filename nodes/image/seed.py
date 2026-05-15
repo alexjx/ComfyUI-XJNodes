@@ -1,6 +1,10 @@
 import hashlib
 
 
+MAX_SEED = 2**32 - 1
+SEED_RANGE = MAX_SEED + 1
+
+
 class XJImageToSeed:
     """
     Generates a deterministic seed from image pixel data.
@@ -13,12 +17,13 @@ class XJImageToSeed:
                 "image": ("IMAGE",),
                 "offset": (
                     "INT",
-                    {"default": 0, "min": 0, "max": 2**32 - 1, "step": 1},
+                    {"default": 0, "min": 0, "max": MAX_SEED, "step": 1},
                 ),
             },
         }
 
     RETURN_TYPES = ("INT",)
+    RETURN_NAMES = ("seed",)
     FUNCTION = "generate_seed"
     CATEGORY = "XJNodes/image"
 
@@ -32,8 +37,8 @@ class XJImageToSeed:
         hash_value = hashlib.md5(img_bytes).hexdigest()
 
         # Convert hash to integer and add offset
-        seed = int(hash_value, 16) % (2**32)
-        seed = (seed + offset) % (2**32)
+        seed = int(hash_value, 16) % SEED_RANGE
+        seed = (seed + offset) % SEED_RANGE
 
         return (seed,)
 

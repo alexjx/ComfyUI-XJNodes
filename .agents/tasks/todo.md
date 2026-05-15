@@ -62,3 +62,20 @@
 - `_write_rating_metadata()` 现在会先判断 `image_path` 是否为符号链接；若是，则把临时文件写到真实目标同目录，并用 `os.replace()` 替换真实目标文件，保留链接本身。
 - 新增 `tests/test_save_rating_metadata.py`，覆盖普通 PNG 元数据写入，以及通过 symlink 保存时“链接仍存在、目标内容已更新”的回归场景。
 - 验证：`uv run -m unittest discover -s tests -p 'test_save_rating_metadata.py'` 通过；`uv run -m unittest discover -s tests -p 'test_*.py'` 全通过（11 tests）。
+
+# Image to Seed uint32 output limit
+
+- [x] Find the `image to seed` node implementation and current seed data flow.
+- [x] Choose the minimal output limiting behavior for `2^32 - 1`.
+- [x] Implement the smallest safe code change.
+- [x] Verify the behavior with a focused check using the project environment.
+- [x] Record review notes and outcome.
+
+## Review
+
+- Changed `nodes/image/seed.py` to make the unsigned 32-bit seed boundary explicit.
+- Added `MAX_SEED = 2**32 - 1` and `SEED_RANGE = MAX_SEED + 1`.
+- Reused `MAX_SEED` for the `offset` widget max.
+- Reused `SEED_RANGE` for output modulo arithmetic, preserving the existing wrap semantics while making the output contract clear.
+- Added `RETURN_NAMES = ("seed",)` so the output is explicitly labeled.
+- Verification: ran a focused `uv run` script from `/home/xinj/ComfyUI`; checked several image tensors and offsets including `MAX_SEED`; asserted every generated seed is an `int` in `0..4294967295` and node metadata is correct.
