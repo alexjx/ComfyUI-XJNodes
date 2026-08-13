@@ -320,6 +320,20 @@ class LoadImagesFromDirList:
 class XJLoadImageWithMetadata:
     """Load image with file path and metadata - supports input/output directories"""
 
+    @staticmethod
+    def _get_image_path(directory, subdirectory, image):
+        if image != os.path.basename(image) or "/" in image or "\\" in image:
+            raise ValueError("Image must be directly inside the selected directory")
+
+        if directory == "input":
+            base_dir = folder_paths.get_input_directory()
+        else:  # output
+            base_dir = folder_paths.get_output_directory()
+
+        subdirectory = subdirectory.strip().strip("/")
+        full_dir = os.path.join(base_dir, subdirectory) if subdirectory else base_dir
+        return os.path.join(full_dir, image)
+
     @classmethod
     def INPUT_TYPES(s):
         return {
@@ -352,22 +366,7 @@ class XJLoadImageWithMetadata:
     FUNCTION = "load_image"
 
     def load_image(self, directory, subdirectory, image):
-        # Get base directory
-        if directory == "input":
-            base_dir = folder_paths.get_input_directory()
-        else:  # output
-            base_dir = folder_paths.get_output_directory()
-
-        # Clean subdirectory: remove leading/trailing slashes
-        subdirectory = subdirectory.strip().strip("/")
-
-        # Construct full path
-        if subdirectory:
-            full_dir = os.path.join(base_dir, subdirectory)
-        else:
-            full_dir = base_dir
-
-        image_path = os.path.join(full_dir, image)
+        image_path = self._get_image_path(directory, subdirectory, image)
 
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Image file not found: {image_path}")
@@ -429,29 +428,13 @@ class XJLoadImageWithMetadata:
 
     @classmethod
     def IS_CHANGED(s, directory, subdirectory, image):
-        # Get base directory
-        if directory == "input":
-            base_dir = folder_paths.get_input_directory()
-        else:
-            base_dir = folder_paths.get_output_directory()
-
-        # Clean subdirectory: remove leading/trailing slashes
-        subdirectory = subdirectory.strip().strip("/")
-
-        # Construct full path
-        if subdirectory:
-            full_dir = os.path.join(base_dir, subdirectory)
-        else:
-            full_dir = base_dir
-
-        image_path = os.path.join(full_dir, image)
-
         m = hashlib.sha256()
         try:
+            image_path = s._get_image_path(directory, subdirectory, image)
             with open(image_path, "rb") as f:
                 m.update(f.read())
             return m.digest().hex()
-        except:
+        except (OSError, ValueError):
             return ""
 
     @classmethod
@@ -460,22 +443,10 @@ class XJLoadImageWithMetadata:
         if not image or image == "":
             return True
 
-        # Get base directory
-        if directory == "input":
-            base_dir = folder_paths.get_input_directory()
-        else:
-            base_dir = folder_paths.get_output_directory()
-
-        # Clean subdirectory: remove leading/trailing slashes
-        subdirectory = subdirectory.strip().strip("/")
-
-        # Construct full path
-        if subdirectory:
-            full_dir = os.path.join(base_dir, subdirectory)
-        else:
-            full_dir = base_dir
-
-        image_path = os.path.join(full_dir, image)
+        try:
+            image_path = s._get_image_path(directory, subdirectory, image)
+        except ValueError as e:
+            return str(e)
 
         if not os.path.exists(image_path):
             return "Invalid image file: {}".format(image)
