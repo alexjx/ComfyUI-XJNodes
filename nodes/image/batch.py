@@ -14,6 +14,81 @@ def pil2tensor(image: Image) -> torch.Tensor:
     return torch.from_numpy(np.array(image).astype(np.float32) / 255.0).unsqueeze(0)
 
 
+class XJImageBatchResize:
+    """Resize each input with preserved aspect ratio, then concatenate batches."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image_1": ("IMAGE",),
+                "width": ("INT", {"default": 1024, "min": 1, "max": 16384}),
+                "height": ("INT", {"default": 1024, "min": 1, "max": 16384}),
+                "resize_mode": (["pad", "crop"], {"default": "pad"}),
+            },
+            "optional": {f"image_{i}": ("IMAGE",) for i in range(2, 9)},
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("images",)
+    FUNCTION = "batch"
+    CATEGORY = "XJNodes/image"
+    DESCRIPTION = (
+        "Combine up to 8 images or batches in input order. Resize with preserved "
+        "aspect ratio: pad adds centered black borders; crop removes centered "
+        "overflow. Inputs 2–8 may be disconnected or None."
+    )
+
+    def batch(self, image_1, width, height, resize_mode, **kwargs):
+        if width < 1 or height < 1:
+            raise ValueError("Target width and height must be positive.")
+        if resize_mode not in ("pad", "crop"):
+            raise ValueError("resize_mode must be pad or crop.")
+        if image_1 is None:
+            raise ValueError("image_1 is required.")
+
+        output = []
+        for index in range(1, 9):
+            images = image_1 if index == 1 else kwargs.get(f"image_{index}")
+            if images is None:
+                continue
+            if images.ndim != 4 or any(size < 1 for size in images.shape[1:]):
+                raise ValueError(f"image_{index} must have shape [batch, height, width, channels].")
+            if images.shape[-1] != image_1.shape[-1]:
+                raise ValueError("All inputs must have the same number of channels.")
+            if images.shape[0] == 0:
+                continue
+            images = images.to(device=image_1.device, dtype=image_1.dtype)
+            source_h, source_w = images.shape[1:3]
+            scale = (min if resize_mode == "pad" else max)(
+                width / source_w, height / source_h
+            )
+            resized_w = max(1, round(source_w * scale))
+            resized_h = max(1, round(source_h * scale))
+            samples = images.movedim(-1, 1)
+            if (resized_h, resized_w) != (source_h, source_w):
+                samples = torch.nn.functional.interpolate(
+                    samples, size=(resized_h, resized_w), mode="bilinear",
+                    align_corners=False, antialias=True,
+                )
+            if resize_mode == "pad":
+                left = (width - resized_w) // 2
+                top = (height - resized_h) // 2
+                samples = torch.nn.functional.pad(
+                    samples, (left, width - resized_w - left,
+                              top, height - resized_h - top),
+                )
+            else:
+                left = (resized_w - width) // 2
+                top = (resized_h - height) // 2
+                samples = samples[:, :, top:top + height, left:left + width]
+            output.append(samples.movedim(1, -1))
+
+        if not output:
+            return (image_1.new_empty((0, height, width, image_1.shape[-1])),)
+        return (torch.cat(output, dim=0),)
+
+
 class XJImageGrid:
     """
     Creates a image grid from batch
@@ -237,6 +312,7 @@ class XJRandomImagesFromBatch:
 
 
 NODE_CLASS_MAPPINGS = {
+    "XJImageBatchResize": XJImageBatchResize,
     "XJImageGrid": XJImageGrid,
     "XJOneImageFromBatch": OneImageFromBatch,
     "XJImageListFilter": XJImageListFilter,
@@ -244,6 +320,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "XJImageBatchResize": "Image Batch Resize (Pad/Crop)",
     "XJImageGrid": "Image Grid",
     "XJOneImageFromBatch": "One Image From Batch",
     "XJImageListFilter": "Image List Filter",

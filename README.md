@@ -10,6 +10,13 @@ This package provides custom nodes organized into four main categories:
 
 ### Image Nodes
 
+- **Image Batch Resize (Pad/Crop)** (`XJNodes/image`)
+  - Combine up to 8 image inputs into one batch, in input order. Each input may itself be a batch.
+  - `image_1` is required; `image_2` through `image_8` may be disconnected or `None` and are skipped.
+  - Set `width` and `height` for the output resolution (default: 1024 × 1024).
+  - `pad`: preserve the full image with centered black padding. `crop`: fill the target and crop excess from the center. Both preserve aspect ratio up to pixel rounding and use bilinear resizing with antialiasing.
+  - Inputs must have matching channel counts. For more than 8 inputs, chain nodes using the same resolution.
+
 **Loaders:**
 - **Load Images From Dir Batch** / **Load Images From Dir List**
   - Load multiple images from a directory as a batch/list, with options for image cap, start index.
@@ -185,4 +192,3 @@ See `requirements.txt` for any additional dependencies.
 ## License
 
 This project is licensed under the GNU General Public License v3.0 (GPL-3.0).
-
