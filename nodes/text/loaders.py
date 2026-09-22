@@ -1,6 +1,9 @@
+import logging
 import os
 import random
 import string
+import time
+from threading import Lock
 import folder_paths
 
 
@@ -61,6 +64,41 @@ def parse_text_blocks(text):
 
 
 class XJRandomTextFromList:
+    _buckets = {}
+    _bucket_lock = Lock()
+    _bucket_ttl = 600
+
+    @classmethod
+    def _pick_with_memory(cls, candidates, seed, bucket_key):
+        # Store values, not indices: duplicate text should not bypass memory.
+        candidates = tuple(dict.fromkeys(candidates))
+        with cls._bucket_lock:
+            now = time.monotonic()
+            for key in list(cls._buckets):
+                if now - cls._buckets[key]["timestamp"] > cls._bucket_ttl:
+                    del cls._buckets[key]
+
+            bucket = cls._buckets.get(bucket_key)
+            if bucket is None or bucket["candidates"] != candidates:
+                bucket = {"candidates": candidates, "remaining": [], "last": None}
+                cls._buckets[bucket_key] = bucket
+
+            refilled = len(bucket["remaining"]) * 2 < len(candidates)
+            if refilled:
+                bucket["remaining"] = list(candidates)
+
+            eligible = [value for value in bucket["remaining"] if value != bucket["last"]]
+            selected = random.Random(seed).choice(eligible or bucket["remaining"])
+            bucket["remaining"].remove(selected)
+            bucket["last"] = selected
+            bucket["timestamp"] = now
+            logging.info(
+                "[XJNodes] Random Text From List node=%s mode=%s bag=on remaining=%d/%d refilled=%s",
+                bucket_key[1], bucket_key[2], len(bucket["remaining"]),
+                len(candidates), "yes" if refilled else "no",
+            )
+            return selected
+
     @staticmethod
     def parse_index_list(index_string):
         """
@@ -121,7 +159,10 @@ class XJRandomTextFromList:
             },
             "optional": {
                 "index_list": ("STRING", {"default": "1, 2, 3"}),
+                "memory": ("BOOLEAN", {"default": False}),
+                "memory_id": ("STRING", {"default": "", "tooltip": "Optional memory namespace for workflows without a workflow ID."}),
             },
+            "hidden": {"unique_id": "UNIQUE_ID", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
 
     RETURN_TYPES = ("STRING",)
@@ -130,15 +171,24 @@ class XJRandomTextFromList:
     FUNCTION = "make_list"
     CATEGORY = "XJNodes/text"
 
-    def make_list(self, multiline_text, type, choice, seed, index_list="1, 2, 3"):
+    def make_list(self, multiline_text, type, choice, seed, index_list="1, 2, 3",
+                  memory=False, memory_id="", unique_id=None, extra_pnginfo=None):
         # Parse text into blocks (supports multiline items)
         text_list = parse_text_blocks(multiline_text)
         if not text_list:
+            logging.info(
+                "[XJNodes] Random Text From List node=%s mode=%s bag=unused reason=empty_list remaining=n/a",
+                unique_id, type,
+            )
             return ([""],)
 
         if type == "fixed":
             # If type is fixed, return the item at 'choice' index with wrap-around
             selected_text = text_list[(choice - 1) % len(text_list)]
+            logging.info(
+                "[XJNodes] Random Text From List node=%s mode=fixed bag=unused remaining=n/a",
+                unique_id,
+            )
         elif type == "list":
             # Parse the index list
             try:
@@ -154,19 +204,25 @@ class XJRandomTextFromList:
                     f"No valid indices in range for list with {len(text_list)} items"
                 )
 
-            # Create a Random object with the seed for better randomness
-            rng = random.Random(seed)
-
             # Convert to 0-indexed for accessing text_list
             available_indices = [i - 1 for i in valid_indices]
-
-            selected_index = rng.choice(available_indices)
-            selected_text = text_list[selected_index]
+            candidates = [text_list[i] for i in available_indices]
         else:  # random
-            # Create a Random object with the seed for better randomness
-            rng = random.Random(seed)
-            selected_index = rng.randint(0, len(text_list) - 1)
-            selected_text = text_list[selected_index]
+            candidates = text_list
+
+        if type != "fixed":
+            if memory:
+                workflow = (extra_pnginfo or {}).get("workflow", {})
+                namespace = memory_id or workflow.get("id") or ""
+                # Never use seed as part of the key: it changes between runs.
+                bucket_key = (str(namespace), str(unique_id), type)
+                selected_text = self._pick_with_memory(candidates, seed, bucket_key)
+            else:
+                selected_text = random.Random(seed).choice(candidates)
+                logging.info(
+                    "[XJNodes] Random Text From List node=%s mode=%s bag=off remaining=n/a candidates=%d",
+                    unique_id, type, len(candidates),
+                )
 
         return (selected_text,)
 
