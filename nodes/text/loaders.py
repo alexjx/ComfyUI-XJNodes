@@ -83,7 +83,7 @@ class XJRandomTextFromList:
                 bucket = {"candidates": candidates, "remaining": [], "last": None}
                 cls._buckets[bucket_key] = bucket
 
-            refilled = len(bucket["remaining"]) * 2 < len(candidates)
+            refilled = len(bucket["remaining"]) * 4 < len(candidates)
             if refilled:
                 bucket["remaining"] = list(candidates)
 

@@ -31,15 +31,15 @@ class TestRandomTextMemory(unittest.TestCase):
     def bucket(self):
         return Node._buckets[("", "7", "list")]
 
-    def test_cross_instance_memory_and_strict_half_boundary(self):
-        outputs = [self.draw(seed) for seed in range(30)]
-        self.assertEqual(len(set(outputs)), 30)
-        self.assertEqual(len(self.bucket()["remaining"]), 30)
-        outputs.append(self.draw(30))
-        self.assertEqual(len(set(outputs)), 31)
-        self.assertEqual(len(self.bucket()["remaining"]), 29)
+    def test_cross_instance_memory_and_strict_quarter_boundary(self):
+        outputs = [self.draw(seed) for seed in range(45)]
+        self.assertEqual(len(set(outputs)), 45)
+        self.assertEqual(len(self.bucket()["remaining"]), 15)
+        outputs.append(self.draw(45))
+        self.assertEqual(len(set(outputs)), 46)
+        self.assertEqual(len(self.bucket()["remaining"]), 14)
         last = outputs[-1]
-        self.assertNotEqual(self.draw(31), last)
+        self.assertNotEqual(self.draw(46), last)
         self.assertEqual(len(self.bucket()["remaining"]), 59)
 
     def test_timestamp_refresh_and_expiration(self):
@@ -89,6 +89,8 @@ class TestRandomTextMemory(unittest.TestCase):
         self.assertEqual(len(self.bucket()["remaining"]), 1)
         self.assertNotEqual(self.draw(2, multiline_text="- A\n- A\n- B\n- C",
                                      index_list="1, 1-4"), outputs[-1])
+        self.assertEqual(len(self.bucket()["remaining"]), 0)
+        self.draw(3, multiline_text="- A\n- A\n- B\n- C", index_list="1, 1-4")
         self.assertEqual(len(self.bucket()["remaining"]), 2)
 
     def test_single_and_two_candidates(self):
@@ -110,8 +112,8 @@ class TestRandomTextMemory(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "No valid indices"):
             self.draw(index_list="99")
         self.assertFalse(Node._buckets)
-        outputs = [self.draw(seed, type="random") for seed in range(31)]
-        self.assertEqual(len(set(outputs)), 31)
+        outputs = [self.draw(seed, type="random") for seed in range(46)]
+        self.assertEqual(len(set(outputs)), 46)
 
     def test_same_history_is_reproducible_without_global_rng_changes(self):
         state = random.getstate()
