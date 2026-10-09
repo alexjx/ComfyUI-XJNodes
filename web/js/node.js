@@ -3,71 +3,62 @@ import { app } from "/scripts/app.js";
 // Registry for node update functions (to support refresh)
 const registeredNodes = {};
 
-// Function to parse text into blocks (supports multiline items)
-function parseTextBlocks(text) {
-    const lines = text.split('\n');
-    const blocks = [];
-    let currentBlock = null;
-    let currentType = null; // 'item' or 'comment'
+// Keep valid item indices and their source positions together.
+function processTextList(text) {
+    const entries = [];
+    let block = null;
+    let lineIndex = 0;
 
-    for (const line of lines) {
-        const stripped = line.trimStart();
-
-        if (stripped.startsWith('-')) {
-            // Start new item block
-            if (currentBlock !== null && currentType === 'item') {
-                blocks.push(currentBlock.join('\n'));
-            }
-
-            // Remove leading '- ' or '-' from first line
-            let firstLine;
-            if (stripped.startsWith('- ')) {
-                firstLine = stripped.substring(2);
-            } else {
-                firstLine = stripped.substring(1);
-            }
-
-            currentBlock = firstLine ? [firstLine] : [];
-            currentType = 'item';
-
-        } else if (stripped.startsWith('#')) {
-            // Start new comment block (will be ignored)
-            if (currentBlock !== null && currentType === 'item') {
-                blocks.push(currentBlock.join('\n'));
-            }
-
-            currentBlock = [];
-            currentType = 'comment';
-
-        } else {
-            // Continuation line
-            if (currentBlock !== null) {
-                // Preserve line as-is (including indentation)
-                currentBlock.push(line);
-            }
-            // If no current block, ignore orphan lines at the start
+    function finishItem() {
+        const value = block?.join('\n').trim();
+        if (value) {
+            entries.push({ index: entries.length + 1, text: value, originalLine: value, lineIndex });
         }
     }
 
-    // Add final block if it's an item
-    if (currentBlock !== null && currentType === 'item') {
-        blocks.push(currentBlock.join('\n'));
+    text.split(/\r?\n/).forEach((line, i) => {
+        const stripped = line.trimStart();
+        if (stripped.startsWith('-')) {
+            finishItem();
+            block = [stripped.slice(stripped.startsWith('- ') ? 2 : 1)];
+            lineIndex = i;
+        } else if (stripped.startsWith('#')) {
+            finishItem();
+            block = null;
+        } else if (block !== null) {
+            block.push(line);
+        }
+    });
+    finishItem();
+    return entries;
+}
+
+function formatTextList(text) {
+    const blocks = [];
+    let block = [];
+    let type = null;
+
+    function finishBlock() {
+        while (block.length && !block[0].trim()) block.shift();
+        while (block.length && !block[block.length - 1].trim()) block.pop();
+        if (block.length) blocks.push(block.join('\n'));
+        block = [];
     }
 
-    // Filter out empty blocks
-    return blocks.filter(b => b.trim());
+    for (const line of text.split(/\r?\n/)) {
+        const stripped = line.trimStart();
+        if (stripped.startsWith('-')) {
+            finishBlock();
+            type = 'item';
+        } else if (stripped.startsWith('#') && (type !== 'comment' || !block[block.length - 1]?.trim())) {
+            finishBlock();
+            type = 'comment';
+        }
+        block.push(line);
+    }
+    finishBlock();
+    return blocks.join('\n\n');
 }
-
-// Function to process text according to XJRandomTextFromList logic
-function processTextList(text) {
-    const blocks = parseTextBlocks(text);
-    return blocks.map((blockText, idx) => ({
-        index: idx + 1,
-        text: blockText,
-        originalLine: blockText // For backward compatibility
-    }));
-}
-
 
 
 // Image Navigator Modal Class
@@ -1228,6 +1219,7 @@ app.registerExtension({
                 const gutter = document.createElement('div');
                 gutter.style.cssText = `
                     width: 50px;
+                    flex: 0 0 50px;
                     height: 100%;
                     background: #2a2a2a;
                     border-right: 1px solid #555;
@@ -1245,6 +1237,7 @@ app.registerExtension({
                 const textarea = document.createElement('textarea');
                 textarea.style.cssText = `
                     flex: 1;
+                    min-width: 0;
                     height: 100%;
                     border: none;
                     outline: none;
@@ -1263,6 +1256,52 @@ app.registerExtension({
                 `;
                 textarea.wrap = "soft"; // Enable soft wrapping
 
+                const toolbar = document.createElement('div');
+                toolbar.style.cssText = `
+                    position: absolute;
+                    top: 6px;
+                    right: 22px;
+                    z-index: 1;
+                    display: flex;
+                    gap: 4px;
+                    opacity: 0.6;
+                    transition: opacity 150ms;
+                `;
+                const updateToolbarOpacity = () => {
+                    toolbar.style.opacity = container.matches(':hover, :focus-within') ? '1' : '0.6';
+                };
+                container.addEventListener('mouseenter', updateToolbarOpacity);
+                container.addEventListener('mouseleave', updateToolbarOpacity);
+                container.addEventListener('focusin', updateToolbarOpacity);
+                container.addEventListener('focusout', () => requestAnimationFrame(updateToolbarOpacity));
+
+                function addToolbarButton(symbol, label, onClick) {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.textContent = symbol;
+                    button.title = label;
+                    button.setAttribute('aria-label', label);
+                    button.style.cssText = `
+                        width: 24px;
+                        height: 24px;
+                        padding: 0;
+                        border: 1px solid #666;
+                        border-radius: 2px;
+                        background: #2a2a2a;
+                        color: #eee;
+                        font: 16px/1 sans-serif;
+                        cursor: pointer;
+                    `;
+                    button.addEventListener('pointerdown', e => e.stopPropagation());
+                    button.addEventListener('mousedown', e => e.stopPropagation());
+                    button.addEventListener('click', e => {
+                        e.stopPropagation();
+                        onClick();
+                    });
+                    toolbar.appendChild(button);
+                    return button;
+                }
+
                 // Default value (demonstrates multiline blocks)
                 const defaultValue = "# This is a comment (will be ignored)\n\n- Option 1: First choice\n  with continuation on line 2\n\n- Option 2: Second choice\n\n- Option 3: Third choice\n  More details here\n  And even more details\n\n# Another comment\n- Option 4: Fourth choice";
                 textarea.value = defaultValue;
@@ -1270,11 +1309,11 @@ app.registerExtension({
                 // Block-based line numbering (supports multiline items)
                 function updateLineNumbers() {
                     const text = textarea.value;
-                    const lines = text.split('\n');
+                    const lines = text.split(/\r?\n/);
                     const textareaWidth = textarea.clientWidth;
 
                     // Preserve current scroll position
-                    const currentScrollTop = gutter.scrollTop;
+                    const currentScrollTop = textarea.scrollTop;
 
                     // Clear gutter
                     gutter.innerHTML = '';
@@ -1294,8 +1333,9 @@ app.registerExtension({
                         font-family: ${computedStyles.fontFamily};
                         font-size: ${computedStyles.fontSize};
                         font-weight: ${computedStyles.fontWeight};
+                        tab-size: ${computedStyles.tabSize};
                         line-height: 18px;
-                        width: ${Math.max(textareaWidth - 16, 200)}px;
+                        width: ${Math.max(textareaWidth - 16, 1)}px;
                         padding: 0;
                         margin: 0;
                         border: none;
@@ -1303,40 +1343,12 @@ app.registerExtension({
                     `;
                     document.body.appendChild(measurer);
 
-                    // Parse lines to determine block numbers
-                    let blockNum = 0;
-                    let currentType = null; // 'item', 'comment', or null
-                    const lineBlockNumbers = []; // Array mapping line index to block number (or null)
-
-                    for (let i = 0; i < lines.length; i++) {
-                        const stripped = lines[i].trimStart();
-
-                        if (stripped.startsWith('-')) {
-                            // Start of new item block
-                            if (blockNum === 0) {
-                                blockNum = 1; // First block ever
-                            } else if (currentType !== null) {
-                                blockNum++; // New block after previous content (item or comment)
-                            }
-                            lineBlockNumbers.push(blockNum);
-                            currentType = 'item';
-                        } else if (stripped.startsWith('#')) {
-                            // Start of comment block
-                            lineBlockNumbers.push(null);
-                            currentType = 'comment';
-                        } else if (!stripped) {
-                            // Empty line
-                            lineBlockNumbers.push(null);
-                        } else {
-                            // Continuation line - belongs to current block but doesn't show number
-                            lineBlockNumbers.push(null);
-                        }
-                    }
+                    const lineBlockNumbers = new Map(processTextList(text).map(entry => [entry.lineIndex, entry.index]));
 
                     // Render gutter with block numbers
                     for (let i = 0; i < lines.length; i++) {
                         const line = lines[i];
-                        const lineNumber = lineBlockNumbers[i];
+                        const lineNumber = lineBlockNumbers.get(i);
 
                         // Measure how many visual lines this logical line actually takes
                         measurer.textContent = line || ' '; // Use space for empty lines
@@ -1374,14 +1386,11 @@ app.registerExtension({
 
                 // Debounced update - only update after user stops typing
                 let updateTimeout;
-                textarea.addEventListener('input', () => {
-                    // Clear any existing timeout
-                    clearTimeout(updateTimeout);
-
-                    // Update choice widget bounds immediately (this is fast)
+                function updateChoiceBounds() {
+                    const validLines = processTextList(textarea.value || "");
+                    locateButton.disabled = validLines.length === 0;
                     const choiceWidget = node.widgets.find(w => w.name === "choice");
                     if (choiceWidget) {
-                        const validLines = processTextList(textarea.value || "");
                         const maxValue = Math.max(1, validLines.length);
                         choiceWidget.options.max = maxValue;
                         if (choiceWidget.value > maxValue) {
@@ -1393,6 +1402,34 @@ app.registerExtension({
                         // Force widget to update its UI
                         node.setDirtyCanvas(true);
                     }
+                }
+
+                addToolbarButton('≡', '格式化列表', () => {
+                    const formatted = formatTextList(textarea.value);
+                    if (formatted === textarea.value) return;
+                    const scrollTop = textarea.scrollTop;
+                    widget.value = formatted;
+                    textarea.scrollTop = scrollTop;
+                    gutter.scrollTop = textarea.scrollTop;
+                });
+                const locateButton = addToolbarButton('⌖', '定位 choice 条目', () => {
+                    const choiceWidget = node.widgets.find(w => w.name === "choice");
+                    if (!choiceWidget) return;
+                    clearTimeout(updateTimeout);
+                    updateLineNumbers();
+                    const target = gutter.querySelector(`[data-line-number="${Number(choiceWidget.value)}"]`);
+                    if (!target) return;
+                    textarea.scrollTop = target.offsetTop - gutter.offsetTop - (textarea.clientHeight - 18) / 2;
+                    gutter.scrollTop = textarea.scrollTop;
+                    target.animate([
+                        { backgroundColor: '#3d5875', color: '#fff' },
+                        { backgroundColor: 'transparent', color: '#6a9bd7' }
+                    ], { duration: 900 });
+                });
+
+                textarea.addEventListener('input', () => {
+                    clearTimeout(updateTimeout);
+                    updateChoiceBounds();
 
                     // Update line numbers after user stops typing for 300ms
                     updateTimeout = setTimeout(() => {
@@ -1440,6 +1477,7 @@ app.registerExtension({
                 // Assemble widget
                 container.appendChild(gutter);
                 container.appendChild(textarea);
+                container.appendChild(toolbar);
 
                 // Create DOM widget using proper ComfyUI method
                 const widget = node.addDOMWidget(inputName, "xj_numbered_list", container, {
@@ -1449,23 +1487,9 @@ app.registerExtension({
                     },
                     setValue(v) {
                         textarea.value = v;
+                        clearTimeout(updateTimeout);
                         updateLineNumbers();
-
-                        // Update choice widget bounds when loading from saved workflow
-                        const choiceWidget = node.widgets.find(w => w.name === "choice");
-                        if (choiceWidget) {
-                            const validLines = processTextList(v || "");
-                            const maxValue = Math.max(1, validLines.length);
-                            choiceWidget.options.max = maxValue;
-                            if (choiceWidget.value > maxValue) {
-                                choiceWidget.value = maxValue;
-                            }
-                            if (choiceWidget.value < 1) {
-                                choiceWidget.value = 1;
-                            }
-                            // Force widget to update its UI
-                            node.setDirtyCanvas(true);
-                        }
+                        updateChoiceBounds();
                     },
                     getMinHeight() {
                         return 150;
@@ -1478,22 +1502,7 @@ app.registerExtension({
                 // Set initial value and update
                 widget.value = defaultValue;
                 updateLineNumbers();
-
-                // Update choice widget bounds with initial content
-                const choiceWidget = node.widgets.find(w => w.name === "choice");
-                if (choiceWidget) {
-                    const validLines = processTextList(defaultValue);
-                    const maxValue = Math.max(1, validLines.length);
-                    choiceWidget.options.max = maxValue;
-                    if (choiceWidget.value > maxValue) {
-                        choiceWidget.value = maxValue;
-                    }
-                    if (choiceWidget.value < 1) {
-                        choiceWidget.value = 1;
-                    }
-                    // Force widget to update its UI
-                    node.setDirtyCanvas(true);
-                }
+                updateChoiceBounds();
 
                 return { widget };
             }
