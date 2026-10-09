@@ -1307,16 +1307,20 @@ app.registerExtension({
                 textarea.value = defaultValue;
 
                 // Block-based line numbering (supports multiline items)
+                let numberedText = null;
+                let numberedWidth = 0;
                 function updateLineNumbers() {
-                    const text = textarea.value;
-                    const lines = text.split(/\r?\n/);
                     const textareaWidth = textarea.clientWidth;
+                    if (!textarea.isConnected || textareaWidth <= 16) return;
+                    const text = textarea.value;
+                    if (text === numberedText && textareaWidth === numberedWidth) {
+                        gutter.scrollTop = textarea.scrollTop;
+                        return;
+                    }
+                    const lines = text.split(/\r?\n/);
 
                     // Preserve current scroll position
                     const currentScrollTop = textarea.scrollTop;
-
-                    // Clear gutter
-                    gutter.innerHTML = '';
 
                     // Get the actual computed styles from textarea
                     const computedStyles = getComputedStyle(textarea);
@@ -1341,47 +1345,39 @@ app.registerExtension({
                         border: none;
                         box-sizing: border-box;
                     `;
-                    document.body.appendChild(measurer);
 
                     const lineBlockNumbers = new Map(processTextList(text).map(entry => [entry.lineIndex, entry.index]));
+                    const measuredLines = lines.map(line => {
+                        const div = document.createElement('div');
+                        div.textContent = line || ' ';
+                        measurer.appendChild(div);
+                        return div;
+                    });
+                    document.body.appendChild(measurer);
+                    // Read all heights together so layout runs once, rather than once per line.
+                    const heights = measuredLines.map(div => Math.max(18, div.offsetHeight));
+                    measurer.remove();
 
-                    // Render gutter with block numbers
+                    const fragment = document.createDocumentFragment();
                     for (let i = 0; i < lines.length; i++) {
-                        const line = lines[i];
+                        const row = document.createElement('div');
+                        row.style.height = `${heights[i]}px`;
                         const lineNumber = lineBlockNumbers.get(i);
-
-                        // Measure how many visual lines this logical line actually takes
-                        measurer.textContent = line || ' '; // Use space for empty lines
-                        const visualHeight = measurer.offsetHeight;
-                        const lineHeight = 18;
-                        const visualLines = Math.max(1, Math.round(visualHeight / lineHeight));
-
-                        // Create gutter elements for each visual line
-                        for (let j = 0; j < visualLines; j++) {
-                            const div = document.createElement('div');
-                            div.style.cssText = `
-                                padding: 0 2px;
-                                height: ${lineHeight}px;
-                                line-height: ${lineHeight}px;
-                                color: ${(j === 0 && lineNumber) ? '#6a9bd7' : 'transparent'};
-                            `;
-                            // Show block number only on the first visual line
-                            div.textContent = (j === 0 && lineNumber) ? lineNumber.toString() : ' ';
-
-                            // Store the block number directly on the element for easy click handling
-                            if (j === 0 && lineNumber) {
-                                div.dataset.lineNumber = lineNumber.toString();
-                            }
-
-                            gutter.appendChild(div);
+                        if (lineNumber) {
+                            const number = document.createElement('div');
+                            number.style.cssText = 'padding: 0 2px; height: 18px; line-height: 18px; color: #6a9bd7;';
+                            number.textContent = lineNumber.toString();
+                            number.dataset.lineNumber = lineNumber.toString();
+                            row.appendChild(number);
                         }
+                        fragment.appendChild(row);
                     }
+                    gutter.replaceChildren(fragment);
+                    numberedText = text;
+                    numberedWidth = textareaWidth;
 
                     // Restore scroll position
                     gutter.scrollTop = currentScrollTop;
-
-                    // Clean up measurement element
-                    document.body.removeChild(measurer);
                 }
 
                 // Debounced update - only update after user stops typing
@@ -1444,8 +1440,13 @@ app.registerExtension({
                 });
 
                 // Update line numbers on resize (affects wrapping)
+                let resizeFrame = 0;
                 const resizeObserver = new ResizeObserver(() => {
-                    updateLineNumbers();
+                    if (resizeFrame) return;
+                    resizeFrame = requestAnimationFrame(() => {
+                        resizeFrame = 0;
+                        updateLineNumbers();
+                    });
                 });
                 resizeObserver.observe(textarea);
 
@@ -1501,8 +1502,21 @@ app.registerExtension({
 
                 // Set initial value and update
                 widget.value = defaultValue;
-                updateLineNumbers();
-                updateChoiceBounds();
+
+                const onRemove = widget.onRemove;
+                widget.onRemove = function (...args) {
+                    resizeObserver.disconnect();
+                    clearTimeout(updateTimeout);
+                    cancelAnimationFrame(resizeFrame);
+                    resizeFrame = 0;
+                    return onRemove?.apply(this, args);
+                };
+                const onAdded = node.onAdded;
+                node.onAdded = function (...args) {
+                    const result = onAdded?.apply(this, args);
+                    resizeObserver.observe(textarea);
+                    return result;
+                };
 
                 return { widget };
             }
