@@ -880,6 +880,7 @@ class XJImagePairCompareWidget {
         this.pointerOverPos = [0, 0];
         this.isPointerOver = false;
         this.isPointerDown = false;
+        this.pointerFrame = null;
         // Store the actual Y position where we start drawing (set by ComfyUI)
         this.startY = 0;
     }
@@ -891,12 +892,14 @@ class XJImagePairCompareWidget {
     set value(v) {
         this._value = v || { pairs: [] };
         this.loadImages();
+        const index = Number.isInteger(this._value.selectedIndex) ? this._value.selectedIndex : 0;
+        this.selectedPairIndex = Math.max(0, Math.min(index, this.pairCount - 1));
     }
 
     setSelected(index) {
         if (index < 0 || index >= this.pairCount) return;
         this.selectedPairIndex = index;
-        this.loadSelectedImages();
+        this.node.setDirtyCanvas(true, true);
     }
 
     loadImages() {
@@ -914,7 +917,7 @@ class XJImagePairCompareWidget {
                     }
                 };
                 imgA.src = pair.a_url;
-                this.imagesA.push(imgA);
+                this.imagesA[i] = imgA;
             }
             if (pair.b_url) {
                 const imgB = new Image();
@@ -924,18 +927,8 @@ class XJImagePairCompareWidget {
                     }
                 };
                 imgB.src = pair.b_url;
-                this.imagesB.push(imgB);
+                this.imagesB[i] = imgB;
             }
-        }
-    }
-
-    loadSelectedImages() {
-        const index = this.selectedPairIndex;
-        if (index < this.imagesA.length && !this.imagesA[index].complete) {
-            // Trigger reload if needed
-        }
-        if (index < this.imagesB.length && !this.imagesB[index].complete) {
-            // Trigger reload if needed
         }
     }
 
@@ -1027,13 +1020,15 @@ class XJImagePairCompareWidget {
         const imageA = imgA;
         const imageB = imgB;
 
-        if (!imageA.naturalWidth || !imageA.naturalHeight) {
+        if (!imageA.naturalWidth || !imageA.naturalHeight ||
+            !imageB.naturalWidth || !imageB.naturalHeight) {
             return y;
         }
 
         const mode = node.properties["comparer_mode"] || "Slide";
         const [nodeWidth, nodeHeight] = node.size;
         const availableHeight = nodeHeight - y - 35; // Reserve space for size label
+        if (availableHeight <= 0) return y;
 
         // Calculate dimensions to fit (maintain aspect ratio)
         const imageAspect = imageA.naturalWidth / imageA.naturalHeight;
@@ -1069,11 +1064,11 @@ class XJImagePairCompareWidget {
             }
         } else if (mode === "Slide" && this.isPointerOver) {
             // Calculate crop position based on mouse
-            const cropX = this.pointerOverPos[0];
+            const cropX = Math.max(destX, Math.min(this.pointerOverPos[0], destX + targetWidth));
 
             // Calculate source and destination dimensions for image B
-            // Only draw image B from cropX to the right edge
-            if (cropX > destX && cropX < destX + targetWidth) {
+            // Show A left of the divider and B right: sliding right reveals A.
+            if (cropX < destX + targetWidth) {
                 const sourceX = (cropX - destX) * (imageB.naturalWidth / targetWidth);
                 const sourceWidth = imageB.naturalWidth - sourceX;
                 const destWidth = targetWidth - (cropX - destX);
@@ -1139,7 +1134,25 @@ class XJImagePairCompareWidget {
     }
 
     setIsPointerDown(down) {
-        this.isPointerDown = down && app.canvas.pointer_is_down;
+        const isDown = !!(down && app.canvas.pointer_is_down);
+        if (this.isPointerDown !== isDown) {
+            this.isPointerDown = isDown;
+            this.node.setDirtyCanvas(true, false);
+        }
+        // ComfyUI may release outside the widget without sending it pointerup.
+        if (isDown && this.pointerFrame === null) {
+            this.pointerFrame = requestAnimationFrame(() => {
+                this.pointerFrame = null;
+                this.setIsPointerDown(this.isPointerDown);
+            });
+        } else if (!isDown && this.pointerFrame !== null) {
+            cancelAnimationFrame(this.pointerFrame);
+            this.pointerFrame = null;
+        }
+    }
+
+    onRemove() {
+        this.setIsPointerDown(false);
     }
 
     computeSize(width) {
@@ -1162,7 +1175,8 @@ class XJImagePairCompareWidget {
     // Handle mouse events using widget's mouse() method (like rgthree)
     // This receives pos in the correct coordinate space matching the draw() method
     mouse(event, pos, node) {
-        if (event.type === "pointerdown") {
+        this.onMouseMove(event, pos, node);
+        if (event.type === "pointerdown" && event.button === 0) {
             // Check if click is within any tab hit area
             for (const [key, area] of Object.entries(this.hitAreas)) {
                 if (key.startsWith("tab_")) {
@@ -1172,11 +1186,13 @@ class XJImagePairCompareWidget {
                     if (pos[0] >= bx && pos[0] <= bx + bw &&
                         pos[1] >= by && pos[1] <= by + bh) {
                         this.setSelected(area.data);
-                        node.setDirtyCanvas(true, true);
                         return true; // Event handled
                     }
                 }
             }
+            this.setIsPointerDown(true);
+        } else if (event.type === "pointerup" || event.type === "pointercancel") {
+            this.setIsPointerDown(false);
         }
 
         // Let other mouse handling continue
@@ -2338,7 +2354,7 @@ app.registerExtension({
             const originalOnMouseMove = nodeType.prototype.onMouseMove;
             const originalOnMouseEnter = nodeType.prototype.onMouseEnter;
             const originalOnMouseLeave = nodeType.prototype.onMouseLeave;
-            const originalClick = nodeType.prototype.click;
+            const originalOnMouseUp = nodeType.prototype.onMouseUp;
 
             nodeType.prototype.onNodeCreated = function () {
                 const result = originalNodeCreated?.apply(this, arguments);
@@ -2396,16 +2412,25 @@ app.registerExtension({
             // Tab clicks are now handled by the widget's mouse() method
             // This matches the rgthree implementation pattern
             nodeType.prototype.onMouseDown = function (event, pos, canvas) {
+                if (this.pairCompareWidget) {
+                    this.pairCompareWidget.onMouseMove(event, pos, this);
+                    if (event.button === 0) this.pairCompareWidget.setIsPointerDown(true);
+                }
                 if (originalOnMouseDown) {
                     return originalOnMouseDown.apply(this, arguments);
                 }
                 return false;
             };
 
+            nodeType.prototype.onMouseUp = function () {
+                this.pairCompareWidget?.setIsPointerDown(false);
+                return originalOnMouseUp?.apply(this, arguments);
+            };
+
             nodeType.prototype.onMouseMove = function (event, pos, canvas) {
                 if (this.pairCompareWidget) {
                     this.pairCompareWidget.onMouseMove(event, pos, this);
-                    this.pairCompareWidget.setIsPointerDown(true);
+                    this.pairCompareWidget.setIsPointerDown(!!(event.buttons & 1));
                     this.setDirtyCanvas(true, false);
                 }
                 if (originalOnMouseMove) {
@@ -2441,30 +2466,35 @@ app.registerExtension({
 
             // Add context menu for opening images
             const originalGetExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
-            nodeType.prototype.getExtraMenuOptions = function(_, options) {
+            nodeType.prototype.getExtraMenuOptions = function(canvas, options) {
                 if (originalGetExtraMenuOptions) {
                     originalGetExtraMenuOptions.apply(this, arguments);
                 }
 
-                // Add "Open image" options for current pair
+                // Capture the image with the larger visible area when the menu opens.
                 if (this.pairCompareWidget && this.pairCompareWidget.pairCount > 0) {
                     const selectedIndex = this.pairCompareWidget.selectedPairIndex;
                     const pairs = this.pairCompareWidget._value.pairs;
 
                     if (pairs && pairs[selectedIndex]) {
                         const pair = pairs[selectedIndex];
+                        const pointerX = canvas?.graph_mouse
+                            ? canvas.graph_mouse[0] - this.pos[0]
+                            : this.pairCompareWidget.pointerOverPos[0];
+                        // The fitted image is centered, so its midpoint is the node's midpoint.
+                        const showA = this.properties["comparer_mode"] === "Click"
+                            ? !this.pairCompareWidget.isPointerDown
+                            : pointerX > this.size[0] / 2;
+                        const imageUrl = showA ? pair.a_url : pair.b_url;
+                        if (!imageUrl) return;
+                        const url = new URL(imageUrl, window.location.href);
+                        url.searchParams.delete("preview");
 
                         options.unshift(
                             {
-                                content: "Open Image A",
+                                content: "Open Image",
                                 callback: () => {
-                                    window.open(pair.a_url, "_blank");
-                                }
-                            },
-                            {
-                                content: "Open Image B",
-                                callback: () => {
-                                    window.open(pair.b_url, "_blank");
+                                    window.open(url.href, "_blank");
                                 }
                             }
                         );

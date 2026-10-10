@@ -80,6 +80,7 @@ This package provides custom nodes organized into four main categories:
   - Compare two image sets with paired selection
   - Numeric tabs (1, 2, 3...) to select corresponding A/B image pairs
   - Slide and Click comparison modes
+  - Sliding right reveals A; sliding left reveals B; "Open Image" opens the image with the larger visible area
   - Image size display under each image
   - Inspired by [rgthree's Image Comparar](https://github.com/rgthree/rgthree-comfy)
 
