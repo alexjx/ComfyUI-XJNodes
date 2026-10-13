@@ -174,6 +174,14 @@ class _CompatParser:
                         self.index,
                     )
                 escaped = self.text[self.index + 1]
+                if escaped == "u":
+                    start = self.index
+                    self.index += 6
+                    # Decode adjacent escapes together to combine emoji surrogate pairs.
+                    while self.text[self.index:self.index + 2] == "\\u":
+                        self.index += 6
+                    out.append(json.loads('"' + self.text[start:self.index] + '"'))
+                    continue
                 out.append(_decode_escape(escaped))
                 self.index += 2
                 continue
