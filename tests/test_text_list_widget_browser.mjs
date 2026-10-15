@@ -178,6 +178,47 @@ test('Text From List browser lifecycle and interactions', {
             `), true);
         });
 
+        await t.test('contents navigates wrapped source lines without changing text or choice', () => {
+            assert.equal(evaluate(`
+                const f = fixture;
+                const text = '# First\\n- ' + 'long text '.repeat(200) + '\\n  ## 中文 section\\n- last';
+                f.widget.value = text;
+                f.choice.value = 2;
+                await settle();
+                const toc = f.container.querySelector('[title="Table of contents"]');
+                const panel = f.container.querySelector('[aria-label="Table of contents"][role="region"]');
+                toc.click();
+                check(!panel.hidden && toc.getAttribute('aria-expanded') === 'true', 'TOC did not open');
+                check(panel.querySelectorAll('button').length === 2, 'wrong heading count');
+                check(document.activeElement === panel.querySelector('button'), 'TOC did not receive focus');
+                panel.querySelectorAll('button')[1].click();
+                await settle();
+                check(panel.hidden && document.activeElement === f.textarea, 'navigation did not return to editor');
+                check(f.textarea.value.slice(f.textarea.selectionStart, f.textarea.selectionEnd) === '  ## 中文 section', 'wrong source selection');
+                check(f.textarea.scrollTop > 0 && f.gutter.scrollTop === f.textarea.scrollTop, 'scroll did not synchronize');
+                const row = f.gutter.children[2].getBoundingClientRect();
+                const viewport = f.gutter.getBoundingClientRect();
+                check(row.top >= viewport.top && row.top < viewport.bottom, 'heading outside viewport');
+                check(f.widget.value === text && f.choice.value === 2, 'navigation changed data');
+                toc.click();
+                panel.querySelector('button').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+                check(panel.hidden && document.activeElement === toc, 'Escape did not dismiss and restore focus');
+                toc.click();
+                f.widget.value = '- no headings';
+                check(panel.hidden, 'external update left stale contents');
+                toc.click();
+                check(panel.textContent.includes('# Section title'), 'missing empty-state help');
+                f.textarea.value = '# New heading\\n- item';
+                f.textarea.dispatchEvent(new Event('input'));
+                check(panel.hidden, 'typing left stale contents');
+                toc.click();
+                check(panel.querySelector('button').textContent === 'New heading · Line 1', 'contents did not refresh');
+                f.textarea.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+                check(panel.hidden, 'editor click did not dismiss');
+                return true;
+            `), true);
+        });
+
         await t.test('removal cancels resize and typing work and calls original cleanup', () => {
             assert.equal(evaluate(`
                 const f = fixture;

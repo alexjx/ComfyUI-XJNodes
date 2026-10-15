@@ -33,6 +33,15 @@ function processTextList(text) {
     return entries;
 }
 
+function getTextListSections(text) {
+    return text.split(/\r?\n/).flatMap((line, lineIndex) => {
+        const match = line.trimStart().match(/^(#+)\s*(.*)$/);
+        return match && match[2].trim()
+            ? [{ title: match[2].trim(), lineIndex }]
+            : [];
+    });
+}
+
 function formatTextList(text) {
     const blocks = [];
     let block = [];
@@ -1439,7 +1448,86 @@ app.registerExtension({
                     ], { duration: 900 });
                 });
 
+                const tocPanel = document.createElement('div');
+                tocPanel.hidden = true;
+                tocPanel.setAttribute('role', 'region');
+                tocPanel.setAttribute('aria-label', 'Table of contents');
+                tocPanel.style.cssText = `
+                    position: absolute; top: 36px; right: 22px; z-index: 2;
+                    width: 280px; max-width: calc(100% - 32px); max-height: calc(100% - 44px);
+                    overflow: auto; box-sizing: border-box; padding: 6px;
+                    background: #252525; color: #eee; border: 1px solid #777;
+                    border-radius: 4px; box-shadow: 0 4px 12px #0008;
+                `;
+                function closeToc(restoreFocus = false) {
+                    tocPanel.hidden = true;
+                    tocButton.setAttribute('aria-expanded', 'false');
+                    if (restoreFocus) tocButton.focus();
+                }
+                function renderToc() {
+                    tocPanel.replaceChildren();
+                    const sections = getTextListSections(textarea.value);
+                    if (!sections.length) {
+                        const hint = document.createElement('div');
+                        hint.textContent = 'Add # Section title on its own line to create a heading.';
+                        hint.style.cssText = 'padding: 8px; line-height: 1.5;';
+                        tocPanel.appendChild(hint);
+                    }
+                    for (const section of sections) {
+                        const entry = document.createElement('button');
+                        entry.type = 'button';
+                        entry.textContent = `${section.title} · Line ${section.lineIndex + 1}`;
+                        entry.style.cssText = `
+                            display: block; width: 100%; padding: 8px; border: 0;
+                            background: transparent; color: inherit; font: inherit;
+                            text-align: left; overflow-wrap: anywhere; cursor: pointer;
+                        `;
+                        entry.addEventListener('mouseenter', () => entry.style.background = '#3d5875');
+                        entry.addEventListener('mouseleave', () => entry.style.background = 'transparent');
+                        entry.addEventListener('click', () => {
+                            closeToc();
+                            updateLineNumbers();
+                            const lines = textarea.value.split('\n');
+                            const offset = lines.slice(0, section.lineIndex).reduce((sum, line) => sum + line.length + 1, 0);
+                            textarea.focus({ preventScroll: true });
+                            textarea.setSelectionRange(offset, offset + lines[section.lineIndex].length);
+                            const row = gutter.children[section.lineIndex];
+                            if (row) textarea.scrollTop = row.offsetTop - gutter.offsetTop - (textarea.clientHeight - 18) / 2;
+                            gutter.scrollTop = textarea.scrollTop;
+                        });
+                        tocPanel.appendChild(entry);
+                    }
+                }
+                const tocButton = addToolbarButton('TOC', 'Table of contents', () => {
+                    if (!tocPanel.hidden) return closeToc();
+                    renderToc();
+                    tocPanel.hidden = false;
+                    tocButton.setAttribute('aria-expanded', 'true');
+                    tocPanel.querySelector('button')?.focus();
+                });
+                tocButton.style.width = '36px';
+                tocButton.style.fontSize = '11px';
+                tocButton.setAttribute('aria-expanded', 'false');
+                for (const type of ['pointerdown', 'mousedown', 'click', 'wheel']) {
+                    tocPanel.addEventListener(type, e => e.stopPropagation());
+                }
+                container.addEventListener('pointerdown', e => {
+                    if (!tocPanel.contains(e.target) && !tocButton.contains(e.target)) closeToc();
+                });
+                container.addEventListener('focusout', e => {
+                    if (!container.contains(e.relatedTarget)) closeToc();
+                });
+                container.addEventListener('keydown', e => {
+                    if (tocPanel.hidden) return;
+                    if (e.key === 'Escape') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        closeToc(true);
+                    }
+                });
+
                 textarea.addEventListener('input', () => {
+                    closeToc();
                     clearTimeout(updateTimeout);
                     updateChoiceBounds();
 
@@ -1495,6 +1583,7 @@ app.registerExtension({
                 container.appendChild(gutter);
                 container.appendChild(textarea);
                 container.appendChild(toolbar);
+                container.appendChild(tocPanel);
 
                 // Create DOM widget using proper ComfyUI method
                 const widget = node.addDOMWidget(inputName, "xj_numbered_list", container, {
@@ -1503,6 +1592,7 @@ app.registerExtension({
                         return textarea.value;
                     },
                     setValue(v) {
+                        closeToc();
                         textarea.value = v;
                         clearTimeout(updateTimeout);
                         updateLineNumbers();
@@ -1521,6 +1611,7 @@ app.registerExtension({
 
                 const onRemove = widget.onRemove;
                 widget.onRemove = function (...args) {
+                    closeToc();
                     resizeObserver.disconnect();
                     clearTimeout(updateTimeout);
                     cancelAnimationFrame(resizeFrame);

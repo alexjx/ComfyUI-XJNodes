@@ -12,6 +12,16 @@ vm.runInContext(pureFunctions, context);
 const format = (text) => context.formatTextList(text);
 const items = (text) => JSON.parse(JSON.stringify(context.processTextList(text)));
 
+test('section headings use nonempty full-line comments and preserve source positions', () => {
+    const input = '# First\r\n- item # inline\r\n  ## 中文\r\n#\r\n  #   \r\n# First\r\n- last';
+    assert.deepEqual(JSON.parse(JSON.stringify(context.getTextListSections(input))), [
+        { title: 'First', lineIndex: 0 },
+        { title: '中文', lineIndex: 2 },
+        { title: 'First', lineIndex: 5 },
+    ]);
+    assert.deepEqual(items(input).map(item => item.text), ['item # inline', 'last']);
+});
+
 test('format inserts exactly one boundary blank line and is idempotent', () => {
     const input = '\n\n- first\n- second\n\n\n\n- third\n\n';
     const expected = '- first\n\n- second\n\n- third';
