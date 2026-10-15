@@ -99,7 +99,7 @@ This package provides custom nodes organized into four main categories:
   - Select text from a numbered list widget (fixed or random selection)
   - Fixed or random selection options
   - Simple YAML-like list syntax
-  - Use full-line comments such as `# Landscapes` as section headings. Click **TOC** in the editor toolbar to list headings with source line numbers, then select one to scroll to and highlight its line. Tab/Enter navigate the buttons; Escape closes the contents. Headings remain excluded from text selection.
+  - Use full-line comments such as `# Landscapes` as section headings. Click **T** (Table of contents) in the editor toolbar to list headings with source line numbers, then select one to scroll to and highlight its line. Tab/Enter navigate the buttons; Escape closes the contents. Headings remain excluded from text selection.
   - Useful for prompts, captions, tags, selection.
   - Optional `memory` (off by default) reduces repeats in `random` and `list` modes. Enable it to draw from a shared-across-instances, per-node bag of distinct candidate texts. Selected texts are removed; before the next draw, the bag refills if **strictly less than 25%** remains. With 60 distinct candidates, the first 46 draws are distinct, then the bag refills on draw 47. Refills avoid immediately repeating the last result when alternatives exist; earlier results can repeat after a refill.
   - Each bag records its last-use timestamp. Bags idle for **more than 10 minutes** are removed on the next memory-enabled draw; restarting ComfyUI clears all bags. Changing candidate texts or their order resets the bag; changing seed does not.

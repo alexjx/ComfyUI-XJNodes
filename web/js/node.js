@@ -1498,15 +1498,13 @@ app.registerExtension({
                         tocPanel.appendChild(entry);
                     }
                 }
-                const tocButton = addToolbarButton('TOC', 'Table of contents', () => {
+                const tocButton = addToolbarButton('T', 'Table of contents', () => {
                     if (!tocPanel.hidden) return closeToc();
                     renderToc();
                     tocPanel.hidden = false;
                     tocButton.setAttribute('aria-expanded', 'true');
                     tocPanel.querySelector('button')?.focus();
                 });
-                tocButton.style.width = '36px';
-                tocButton.style.fontSize = '11px';
                 tocButton.setAttribute('aria-expanded', 'false');
                 for (const type of ['pointerdown', 'mousedown', 'click', 'wheel']) {
                     tocPanel.addEventListener(type, e => e.stopPropagation());
