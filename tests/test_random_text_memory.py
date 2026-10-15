@@ -44,7 +44,7 @@ class TestRandomTextMemory(unittest.TestCase):
 
     def test_timestamp_refresh_and_expiration(self):
         with patch.object(module.time, "monotonic", return_value=0):
-            self.draw()
+            self.draw(cache_time=600)
             stale = self.bucket()
         with patch.object(module.time, "monotonic", return_value=600):
             self.draw(unique_id="8")
@@ -56,6 +56,45 @@ class TestRandomTextMemory(unittest.TestCase):
         with patch.object(module.time, "monotonic", return_value=602):
             self.draw()
             self.assertEqual(len(self.bucket()["remaining"]), 59)
+
+    def test_default_timeout_and_widget(self):
+        widget = Node.INPUT_TYPES()["optional"]["cache_time"]
+        self.assertEqual(widget[0], "INT")
+        self.assertEqual(widget[1]["default"], 7200)
+        self.assertEqual(widget[1]["min"], 1)
+        with patch.object(module.time, "monotonic", return_value=0):
+            self.draw()
+            original = self.bucket()
+        with patch.object(module.time, "monotonic", return_value=7200):
+            self.draw(unique_id="8", cache_time=1)
+            self.assertIs(self.bucket(), original)
+        with patch.object(module.time, "monotonic", return_value=7201):
+            self.draw()
+            self.assertIsNot(self.bucket(), original)
+
+    def test_custom_timeout_refreshes_and_is_isolated(self):
+        with patch.object(module.time, "monotonic", return_value=0):
+            self.draw(cache_time=10)
+            self.draw(unique_id="8", cache_time=100)
+        with patch.object(module.time, "monotonic", return_value=10):
+            self.draw(cache_time=10)
+            self.assertEqual(len(self.bucket()["remaining"]), 58)
+        with patch.object(module.time, "monotonic", return_value=21):
+            self.draw(unique_id="9", cache_time=1)
+            self.assertNotIn(("", "7", "list"), Node._buckets)
+            self.assertIn(("", "8", "list"), Node._buckets)
+
+    def test_changed_timeout_applies_on_next_draw(self):
+        for initial, updated, resets in ((100, 10, True), (10, 100, False)):
+            with self.subTest(initial=initial, updated=updated):
+                Node._buckets.clear()
+                with patch.object(module.time, "monotonic", return_value=0):
+                    self.draw(cache_time=initial)
+                    original = self.bucket()
+                with patch.object(module.time, "monotonic", return_value=20):
+                    self.draw(cache_time=updated)
+                    self.assertEqual(self.bucket() is not original, resets)
+                    self.assertEqual(self.bucket()["ttl"], updated)
 
     def test_recent_access_extends_ttl(self):
         for now in (0, 500, 1000):

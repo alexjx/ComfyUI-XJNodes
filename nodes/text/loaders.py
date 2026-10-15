@@ -66,16 +66,18 @@ def parse_text_blocks(text):
 class XJRandomTextFromList:
     _buckets = {}
     _bucket_lock = Lock()
-    _bucket_ttl = 600
+    _bucket_ttl = 7200
 
     @classmethod
-    def _pick_with_memory(cls, candidates, seed, bucket_key):
+    def _pick_with_memory(cls, candidates, seed, bucket_key, cache_time):
         # Store values, not indices: duplicate text should not bypass memory.
         candidates = tuple(dict.fromkeys(candidates))
         with cls._bucket_lock:
             now = time.monotonic()
+            if bucket_key in cls._buckets:
+                cls._buckets[bucket_key]["ttl"] = cache_time
             for key in list(cls._buckets):
-                if now - cls._buckets[key]["timestamp"] > cls._bucket_ttl:
+                if now - cls._buckets[key]["timestamp"] > cls._buckets[key]["ttl"]:
                     del cls._buckets[key]
 
             bucket = cls._buckets.get(bucket_key)
@@ -92,6 +94,7 @@ class XJRandomTextFromList:
             bucket["remaining"].remove(selected)
             bucket["last"] = selected
             bucket["timestamp"] = now
+            bucket["ttl"] = cache_time
             logging.info(
                 "[XJNodes] Random Text From List node=%s mode=%s bag=on remaining=%d/%d refilled=%s",
                 bucket_key[1], bucket_key[2], len(bucket["remaining"]),
@@ -161,6 +164,10 @@ class XJRandomTextFromList:
                 "index_list": ("STRING", {"default": "1, 2, 3"}),
                 "memory": ("BOOLEAN", {"default": False}),
                 "memory_id": ("STRING", {"default": "", "tooltip": "Optional memory namespace for workflows without a workflow ID."}),
+                "cache_time": ("INT", {
+                    "default": s._bucket_ttl, "min": 1, "max": 2147483647, "step": 1,
+                    "tooltip": "Selection memory idle timeout in seconds (7200 = 2 hours). Only used when memory is enabled; each draw restarts the timer.",
+                }),
             },
             "hidden": {"unique_id": "UNIQUE_ID", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
@@ -172,7 +179,8 @@ class XJRandomTextFromList:
     CATEGORY = "XJNodes/text"
 
     def make_list(self, multiline_text, type, choice, seed, index_list="1, 2, 3",
-                  memory=False, memory_id="", unique_id=None, extra_pnginfo=None):
+                  memory=False, memory_id="", unique_id=None, extra_pnginfo=None,
+                  cache_time=_bucket_ttl):
         # Parse text into blocks (supports multiline items)
         text_list = parse_text_blocks(multiline_text)
         if not text_list:
@@ -216,7 +224,7 @@ class XJRandomTextFromList:
                 namespace = memory_id or workflow.get("id") or ""
                 # Never use seed as part of the key: it changes between runs.
                 bucket_key = (str(namespace), str(unique_id), type)
-                selected_text = self._pick_with_memory(candidates, seed, bucket_key)
+                selected_text = self._pick_with_memory(candidates, seed, bucket_key, cache_time)
             else:
                 selected_text = random.Random(seed).choice(candidates)
                 logging.info(
