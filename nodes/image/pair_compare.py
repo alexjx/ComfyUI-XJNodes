@@ -48,7 +48,10 @@ class XJImagePairCompare(nodes.PreviewImage):
                 f"images_b has {count_b} image(s). Both must have the same number of images."
             )
 
-        result = {"ui": {"a_images": [], "b_images": []}}
+        result = {
+            "ui": {"a_images": [], "b_images": []},
+            "result": (images_a if images_a is not None else images_b,),
+        }
         if images_a is not None and len(images_a) > 0:
             result["ui"]["a_images"] = self.save_images(
                 images_a, filename_prefix, prompt, extra_pnginfo
