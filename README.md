@@ -18,6 +18,13 @@ This package provides custom nodes organized into four main categories:
   - Inputs must have matching channel counts. For more than 8 inputs, chain nodes using the same resolution.
 
 **Loaders:**
+- **Random Image from Dir** (`XJNodes/image`)
+  - Returns one image, its transparency mask, and its absolute file path on each execution.
+  - `random`: visits every image once in shuffled order before reshuffling; avoids an immediate repeat between cycles when there is more than one image.
+  - `iteration`: starts at a random position in the sorted file list, advances one file per execution, and wraps around.
+  - Choose `input` or `output` and enter a `subdirectory`, or use **Browse Subdirs**, matching Load Image With Metadata. Enable `recursive` to include subdirectories. The selected image appears in the node preview after execution. Supports PNG, JPEG, WebP, BMP, TIFF, and GIF (first frame only), with EXIF orientation applied.
+  - Memory is local to the node instance, is not saved in the workflow, and resets when the instance is recreated or the directory, mode, recursive setting, or file list changes. Empty/missing folders and unreadable images raise errors.
+
 - **Load Images From Dir Batch** / **Load Images From Dir List**
   - Load multiple images from a directory as a batch/list, with options for image cap, start index.
   - Allow Recursive loading

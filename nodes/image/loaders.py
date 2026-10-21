@@ -1,12 +1,119 @@
 import os
 import json
 import hashlib
+import random
 import numpy as np
 import torch
 from PIL import Image, ImageOps, ImageSequence
 import comfy.utils
 import folder_paths
 import node_helpers
+
+
+class XJRandomImageFromDir:
+    """Select one image per execution, remembering progress for this instance."""
+
+    valid_extensions = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".gif")
+
+    def __init__(self):
+        self._key = None
+        self._remaining = []
+        self._index = 0
+        self._last = None
+        self._rng = random.Random()
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "directory": (["input", "output"],),
+                "subdirectory": ("STRING", {"default": ""}),
+                "mode": (["random", "iteration"],),
+            },
+            "optional": {"recursive": ("BOOLEAN", {"default": False})},
+        }
+
+    RETURN_TYPES = ("IMAGE", "MASK", "STRING")
+    RETURN_NAMES = ("IMAGE", "MASK", "FILE PATH")
+    FUNCTION = "load_image"
+    CATEGORY = "XJNodes/image"
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        # Selection must advance even when the inputs have not changed.
+        return float("nan")
+
+    def load_image(self, directory, subdirectory="", mode="random", recursive=False):
+        if mode not in ("random", "iteration"):
+            raise ValueError(f"Unknown selection mode: {mode}")
+        if directory not in ("input", "output"):
+            raise ValueError("Directory must be input or output")
+        directory_type = directory
+        base_dir = os.path.realpath(
+            folder_paths.get_input_directory() if directory == "input"
+            else folder_paths.get_output_directory()
+        )
+        directory = os.path.realpath(os.path.join(base_dir, subdirectory.strip().strip("/")))
+        if os.path.commonpath((base_dir, directory)) != base_dir:
+            raise ValueError("Subdirectory must be inside the selected directory")
+        if not os.path.isdir(directory):
+            raise FileNotFoundError(f"Directory '{directory}' cannot be found.")
+
+        files = []
+        for root, _, filenames in os.walk(directory):
+            files.extend(
+                os.path.join(root, name) for name in filenames
+                if name.lower().endswith(self.valid_extensions)
+                and os.path.isfile(os.path.join(root, name))
+                and os.path.commonpath((base_dir, os.path.realpath(os.path.join(root, name)))) == base_dir
+            )
+            if not recursive:
+                break
+        files.sort()
+        if not files:
+            raise FileNotFoundError(f"No supported image files found in '{directory}'.")
+
+        key = (directory, mode, recursive, tuple(files))
+        if key != self._key:
+            self._key = key
+            self._remaining = []
+            self._last = None
+            self._index = self._rng.randrange(len(files)) if mode == "iteration" else 0
+
+        if mode == "random":
+            if not self._remaining:
+                self._remaining = files.copy()
+                self._rng.shuffle(self._remaining)
+                if len(files) > 1 and self._remaining[-1] == self._last:
+                    swap = self._rng.randrange(len(files) - 1)
+                    self._remaining[-1], self._remaining[swap] = (
+                        self._remaining[swap], self._remaining[-1]
+                    )
+            image_path = self._remaining[-1]
+        else:
+            image_path = files[self._index]
+
+        # Decode only the first frame, including EXIF orientation and transparency.
+        # Advance selection only after decoding succeeds.
+        with Image.open(image_path) as source:
+            oriented = ImageOps.exif_transpose(source)
+            rgba = np.array(oriented.convert("RGBA"), dtype=np.float32) / 255.0
+        image = torch.from_numpy(rgba[:, :, :3].copy()).unsqueeze(0)
+        mask = torch.from_numpy(1.0 - rgba[:, :, 3]).unsqueeze(0)
+
+        if mode == "random":
+            self._remaining.pop()
+        else:
+            self._index = (self._index + 1) % len(files)
+        self._last = image_path
+        return {
+            "ui": {"images": [{
+                "filename": os.path.basename(image_path),
+                "subfolder": os.path.relpath(os.path.dirname(image_path), base_dir),
+                "type": directory_type,
+            }]},
+            "result": (image, mask, image_path),
+        }
 
 
 class LoadImagesFromDirBatch:
@@ -505,6 +612,7 @@ class XJLoadImageByPath:
 
 
 NODE_CLASS_MAPPINGS = {
+    "XJRandomImageFromDir": XJRandomImageFromDir,
     "XJLoadImagesFromDirBatch": LoadImagesFromDirBatch,
     "XJLoadImagesFromDirList": LoadImagesFromDirList,
     "XJLoadImageWithMetadata": XJLoadImageWithMetadata,
@@ -512,6 +620,7 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "XJRandomImageFromDir": "Random Image from Dir",
     "XJLoadImagesFromDirBatch": "Load Images From Dir Batch",
     "XJLoadImagesFromDirList": "Load Images From Dir List",
     "XJLoadImageWithMetadata": "Load Image With Metadata",
